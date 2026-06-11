@@ -1,0 +1,17 @@
+[project]
+name = "rag-maze-runner"
+version = "0.1.0"
+description = "RAG question-réponse en français sur l'univers du Labyrinthe (Maze Runner) — LO17/AI31 UTC"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain-core>=0.3",
+    "langchain-community>=0.3",
+    "langchain-google-genai>=2.0",
+    "langchain-text-splitters>=0.3",
+    "chromadb>=0.5",
+    "beautifulsoup4>=4.12",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "streamlit>=1.40",
+]
