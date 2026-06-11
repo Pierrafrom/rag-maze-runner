@@ -28,44 +28,57 @@ idéal pour un RAG factuel et vérifiable.
 
 ## 2. Architecture
 
-Le projet est organisé en **deux couches**.
+Pipeline **RAG avancé** organisé en deux couches.
 
-### Couche A — Ingestion (construction de la base)
+### Couche A — Ingestion multi-représentation (`uv run python ingest.py`)
 
-Reproductible via `python ingest.py` :
+Indexation **Parent Document Retriever** : on découpe en petits **enfants**
+(~250 car., embarqués dans Chroma `chroma_children/`) reliés à des **parents**
+plus larges (~1500 car., stockés dans un docstore persistant `parent_docstore/`).
+À la recherche, un enfant trouvé fait remonter son parent (plus de contexte).
 
-1. **Chargement** (`src/loader.py`) — récupération des pages via l'**API
-   MediaWiki** (`action=parse`) du wiki, plus propre que le scraping HTML brut.
-2. **Nettoyage** (BeautifulSoup) — suppression des `table`/`script`/`style`,
-   extraction des paragraphes `<p>`.
-3. **Filtrage** — pages/documents trop courts écartés (peu d'information).
-4. **Découpage** — `RecursiveCharacterTextSplitter` (`chunk_size=1000`,
-   `overlap=200`).
-5. **Indexation** (`src/vectorstore.py`) — embeddings Gemini, stockés dans
-   Chroma **par batchs avec pauses** (respect du quota de l'API).
+1. **Chargement** (`src/loader.py`) — pages du wiki via l'**API MediaWiki**.
+2. **Nettoyage** (BeautifulSoup) + **filtrage** des pages trop courtes.
+3. **Indexation parent-enfant** (`src/vectorstore.py`) — embeddings Gemini des
+   enfants **par lots avec pauses** (quota), parents dans le docstore.
 
-### Couche B — Récupération + Génération (réponse aux questions)
+### Couche B — Récupération + Génération avancée (`RagPipeline`, `src/rag.py`)
 
-Orchestrée par `RagPipeline` (`src/rag.py`), en **lecture seule** sur la base :
+En **lecture seule**, 6 étapes (toutes activables/désactivables via `config.py`) :
 
-1. **Récupération** des `k` chunks les plus proches + calcul du **score de
-   similarité cosinus** requête/chunk.
-2. **Filtre par seuil** (anti-hallucination nº1) — on écarte les chunks dont le
-   cosinus est inférieur au seuil (`SIMILARITY_THRESHOLD`).
-3. **Réponse de repli** (anti-hallucination nº2) — si aucun chunk fiable, on
-   renvoie un message standard **sans appeler le LLM**.
-4. **Génération** — sinon, le contexte est assemblé et envoyé au LLM Gemini via
-   une chaîne LangChain `prompt → llm → parser`.
+1. **Multi-Query** (`src/retrieval.py`) — le LLM génère 3 reformulations FR de
+   la question (logique du prototype `rag.ipynb`).
+2. **RAG-Fusion** — recherche vectorielle pour chaque requête, remontée au
+   parent, puis fusion des classements par **Reciprocal Rank Fusion (RRF)**.
+3. **Re-Ranking** — **FlashRank** (modèle local multilingue) reclasse le top 15
+   fusionné → **top 4** sémantique.
+4. **CRAG** (anti-hallucination) — un LLM note le contexte
+   `PERTINENT / AMBIGU / HORS-SUJET`. HORS-SUJET ⇒ repli sans génération ;
+   AMBIGU ⇒ avertissement injecté dans le prompt.
+5. **Génération** — réponse ancrée au contexte (Gemini), prompt contraint.
+6. **Self-RAG** — auto-évaluation (fidélité + pertinence) ; si échec, une passe
+   de correction avant renvoi.
 
 ```
-Question ──▶ embeddings ──▶ Chroma (k plus proches) ──▶ filtre cosinus
-                                                            │
-                          ┌── aucun chunk fiable ───────────┤
-                          ▼                                  ▼
-                    Réponse de repli                  Contexte + prompt
-                  (LLM non appelé)                          │
-                                                            ▼
-                                                     LLM Gemini ──▶ Réponse + sources
+Question
+   │
+   ▼
+[Multi-Query] ─ 3 reformulations + question
+   │
+   ▼
+[RAG-Fusion] ─ recherche enfants → parents → RRF (top 15)
+   │
+   ▼
+[Re-Ranking] ─ FlashRank (top 15 → top 4)
+   │
+   ▼
+[CRAG] ── HORS-SUJET ─▶ Réponse de repli (pas de génération)
+   │ PERTINENT / AMBIGU
+   ▼
+[Génération] ─ LLM Gemini (contexte + prompt contraint)
+   │
+   ▼
+[Self-RAG] ─ auto-évaluation → correction si besoin ─▶ Réponse + sources
 ```
 
 ---
@@ -80,13 +93,16 @@ Question ──▶ embeddings ──▶ Chroma (k plus proches) ──▶ filtre
 ├── uv.lock                # Versions verrouillées (reproductibilité)
 ├── .env.example           # Modèle de configuration (à copier en .env)
 ├── src/
-│   ├── config.py          # Configuration centralisée (modèles, URLs, seuils…)
-│   ├── prompts.py         # Prompt de question-réponse (ancré au domaine)
-│   ├── loader.py          # Chargement wiki + nettoyage + chunking
-│   ├── vectorstore.py     # Embeddings + build/load Chroma
-│   ├── generator.py       # LLM Gemini + chaînes LangChain
-│   └── rag.py             # RagPipeline (retrieval + anti-hallucinations + génération)
-├── chroma_maze_runner/    # Base Chroma persistée (323 vecteurs)
+│   ├── config.py          # Configuration centralisée (modèles, RRF, rerank, CRAG…)
+│   ├── prompts.py         # Prompts FR (QA, multi-query, CRAG, Self-RAG, correction)
+│   ├── loader.py          # Chargement wiki + nettoyage
+│   ├── vectorstore.py     # Index parent-enfant (Chroma enfants + docstore parents)
+│   ├── retrieval.py       # Multi-Query + RAG-Fusion (RRF) + Re-Ranking (FlashRank)
+│   ├── generator.py       # Chaînes LLM (génération, multi-query, CRAG, Self-RAG)
+│   └── rag.py             # RagPipeline (orchestration des 6 étapes)
+├── chroma_children/       # Base Chroma des chunks « enfants » (construite par ingest.py)
+├── parent_docstore/       # Docstore persistant des « parents »
+├── chroma_maze_runner/    # Base du pipeline simple (legacy, comparaison naïf vs avancé)
 ├── rag.ipynb              # Notebook prototype d'origine
 ├── CLAUDE.md              # Guide interne (assistant) — non commité
 └── suivi.md               # Journal des décisions et modifications
@@ -133,19 +149,28 @@ uv run python ingest.py
 ### Poser une question
 
 ```bash
-uv run python main.py "Qui est Thomas ?"
+uv run python main.py "Quel est le but de WICKED ?"
 ```
 
-Exemple de sortie :
+Exemple de sortie (les étapes sont tracées en temps réel) :
 
 ```
-Question : Qui est Thomas ?
+[Multi-Query] 3 variante(s) générée(s) (+ question originale)
+[RAG-Fusion] 15 parents fusionnés via RRF
+[Re-Ranking] top 4/15 retenus (FlashRank)
+[CRAG] Statut: PERTINENT
+[Génération] réponse produite
+[Self-RAG] Validation: OK
+========================================================================
+Question     : Quel est le but de WICKED ?
+Statut CRAG  : PERTINENT
+Self-RAG     : OK
 
-Réponse  : Thomas, auparavant Stephen, est un ancien Blocard du groupe A et
-un des créateurs du Labyrinthe...
+Réponse      : WICKED cherche à étudier les réactions cérébrales des sujets
+immunisés pour élaborer un remède contre la Braise...
 
 Sources (wiki Fandom FR) :
-  - Thomas (cosinus=0.741) — https://mazerunner.fandom.com/fr/wiki/Thomas
+  - Quartier_général_du_WICKED score=0.98 — https://mazerunner.fandom.com/fr/wiki/...
   ...
 ```
 
@@ -172,27 +197,34 @@ Tous les paramètres sont dans `src/config.py` :
 | Paramètre | Rôle | Défaut |
 |---|---|---|
 | `EMBEDDING_MODEL` | Modèle d'embedding | `models/gemini-embedding-001` |
-| `LLM_MODEL` | Modèle de génération | `gemini-2.5-flash` |
-| `RETRIEVER_K` | Nombre de chunks récupérés | `4` |
-| `SIMILARITY_THRESHOLD` | Seuil cosinus minimal | `0.5` |
-| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Découpage | `1000` / `200` |
+| `LLM_MODEL` / `LLM_TEMPERATURE` | Génération | `gemini-2.5-flash` / `0.3` |
+| `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE` | Découpage parent / enfant | `1500` / `250` |
+| `NUM_QUERIES` | Reformulations multi-query | `3` |
+| `RRF_K` / `FUSION_TOP_N` | Fusion RRF / top fusionné | `60` / `15` |
+| `RERANK_TOP_N` / `RERANKER_MODEL` | Top rerank / modèle FlashRank | `4` / `ms-marco-MultiBERT-L-12` |
+| `MAX_CORRECTIONS` | Passes de correction Self-RAG | `1` |
+| `USE_MULTIQUERY/RERANK/CRAG/SELF_RAG` | Interrupteurs d'étapes | `True` |
 | `FALLBACK_ANSWER` | Message de repli | *(voir fichier)* |
 
-Le prompt est isolé dans `src/prompts.py` pour être modifié facilement.
+Les prompts sont isolés dans `src/prompts.py` pour être modifiés facilement.
+Les interrupteurs `USE_*` permettent d'activer/désactiver chaque étape (utile
+pour l'évaluation comparative et le RAG « naïf »).
 
 ---
 
 ## 7. Gestion des hallucinations
 
-Deux mécanismes complémentaires :
+Plusieurs mécanismes complémentaires :
 
-1. **Filtre par score cosinus** — calculé à partir des vecteurs réellement
-   stockés (et non du score de distance brut de Chroma), pour que le seuil de
-   `0.5` ait une signification stable. Si aucun chunk ne dépasse le seuil, le
-   LLM n'est pas appelé.
-2. **Réponse de repli** + **prompt contraint** — le prompt interdit au LLM
-   d'utiliser ses connaissances générales et lui impose de renvoyer le message
-   de repli si la réponse n'est pas dans le contexte (seconde barrière).
+1. **CRAG (Corrective RAG)** — un LLM juge si le contexte récupéré est
+   `PERTINENT / AMBIGU / HORS-SUJET`. Si HORS-SUJET, on renvoie le repli **sans
+   appeler le LLM de génération** ; si AMBIGU, un avertissement est injecté dans
+   le prompt.
+2. **Prompt contraint** — interdit au LLM d'utiliser ses connaissances
+   générales et lui impose de signaler explicitement l'absence d'information.
+3. **Self-RAG (auto-évaluation)** — après génération, un LLM vérifie la
+   **fidélité** (la réponse est appuyée par le contexte) et la **pertinence** ;
+   en cas d'échec, une passe de correction est appliquée avant le renvoi.
 
 ---
 
@@ -204,7 +236,8 @@ Deux mécanismes complémentaires :
 | Crash à l'import de `langchain_text_splitters` (Keras 3 / transformers) | Conflit TensorFlow/Keras | Géré automatiquement (`USE_TF=0` dans `loader.py`) |
 | `400 API_KEY_INVALID` | Clé absente ou placeholder dans `.env` | Renseigner une vraie clé `GOOGLE_API_KEY` |
 | `429 RESOURCE_EXHAUSTED` (`limit: 0`) | Quota du modèle épuisé / indisponible | Changer `LLM_MODEL` dans `src/config.py` (ex. `gemini-2.5-flash`) |
-| `FileNotFoundError: Base Chroma introuvable` | Base non construite | Lancer `python ingest.py` |
+| `FileNotFoundError: Index parent-enfant introuvable` | Index avancé non construit | Lancer `uv run python ingest.py` |
+| Téléchargement `ms-marco-MultiBERT-L-12...` au 1er lancement | FlashRank récupère le modèle de reranking (~100 Mo) | Normal, une seule fois (mis en cache ensuite) |
 
 ---
 
@@ -219,8 +252,9 @@ Toutes les décisions et modifications sont consignées dans **`suivi.md`**
 
 - [ ] **Application Streamlit** au-dessus de `RagPipeline`.
 - [ ] **Évaluation du RAG** : jeu de questions/réponses de référence + métriques
-  (pertinence des passages, fidélité des réponses, taux de repli correct).
-- [ ] Décider de **versionner ou non** `chroma_maze_runner/`.
+  (pertinence des passages, fidélité des réponses, taux de repli correct),
+  en comparant les configurations via les interrupteurs `USE_*`.
+- [ ] Décider de **versionner ou non** les index (`chroma_children/`, etc.).
 - [ ] (Bonus) **Déploiement** de l'application.
 
 ---
@@ -230,4 +264,6 @@ Toutes les décisions et modifications sont consignées dans **`suivi.md`**
 | Rôle | Modèle |
 |---|---|
 | Embeddings | `models/gemini-embedding-001` |
-| LLM | `gemini-2.5-flash` |
+| LLM (génération) | `gemini-2.5-flash` (temp 0.3) |
+| LLM (graders CRAG / Self-RAG) | `gemini-2.5-flash` (temp 0) |
+| Re-ranking | `ms-marco-MultiBERT-L-12` (FlashRank, local multilingue) |

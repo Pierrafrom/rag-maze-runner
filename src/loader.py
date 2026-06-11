@@ -22,10 +22,14 @@ from urllib.parse import unquote
 # `setdefault` n'écrase pas une valeur déjà choisie par l'utilisateur.
 os.environ.setdefault("USE_TF", "0")
 
+import logging
+
 import requests
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+logger = logging.getLogger(__name__)
 
 from src.config import (
     CHUNK_OVERLAP,
@@ -118,14 +122,16 @@ def load_all_documents(
         doc = load_wiki_page(url)
         if doc is not None:
             documents.append(doc)
-            if verbose:
-                print(f"OK   : {doc.metadata['title']} ({len(doc.page_content)} car.)")
-        elif verbose:
-            print(f"VIDE : {_page_name_from_url(url)}")
+            logger.info(
+                "[Loader] OK   : %s (%d car.)",
+                doc.metadata["title"],
+                len(doc.page_content),
+            )
+        else:
+            logger.info("[Loader] VIDE : %s", _page_name_from_url(url))
         time.sleep(delay)
 
-    if verbose:
-        print(f"\n{len(documents)} documents chargés sur {len(urls)}")
+    logger.info("[Loader] %d documents chargés sur %d", len(documents), len(urls))
     return documents
 
 
@@ -147,14 +153,38 @@ def split_documents(documents: list[Document]) -> list[Document]:
 
 
 def prepare_chunks(urls: list[str] = WIKI_URLS, verbose: bool = True) -> list[Document]:
-    """Pipeline complet d'ingestion : chargement → filtrage → chunking.
+    """Pipeline simple (legacy) : chargement → filtrage → chunking.
 
     Returns:
-        La liste des chunks prêts à être indexés dans Chroma.
+        La liste des chunks prêts à être indexés dans Chroma (1000 car.).
     """
     documents = load_all_documents(urls, verbose=verbose)
     documents = filter_documents(documents)
     chunks = split_documents(documents)
-    if verbose:
-        print(f"{len(chunks)} chunks produits à partir de {len(documents)} documents")
+    logger.info(
+        "[Loader] %d chunks produits à partir de %d documents",
+        len(chunks),
+        len(documents),
+    )
     return chunks
+
+
+def load_clean_documents(
+    urls: list[str] = WIKI_URLS, verbose: bool = True
+) -> list[Document]:
+    """Charge et filtre les documents wiki SANS les découper.
+
+    Utilisé par l'indexation avancée (Parent Document Retriever) : c'est le
+    retriever lui-même qui découpe ensuite en parents (~1500 car.) puis en
+    enfants (~250 car.). On renvoie donc les documents complets nettoyés.
+
+    Returns:
+        La liste des documents nettoyés et filtrés (un par page conservée).
+    """
+    documents = load_all_documents(urls, verbose=verbose)
+    documents = filter_documents(documents)
+    logger.info(
+        "[Loader] %d documents nettoyés prêts pour l'indexation parent-enfant",
+        len(documents),
+    )
+    return documents

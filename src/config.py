@@ -2,10 +2,8 @@
 
 Tous les paramètres réglables du projet sont regroupés ici afin de garder un
 point d'entrée unique pour les modèles, les sources de données, le chunking,
-l'indexation et la couche de récupération/génération.
-
-Inspiré de la centralisation des réglages du projet de référence
-``Pasteuraize`` (settings.py), adapté ici à un contexte RAG question-réponse.
+l'indexation et la couche de récupération/génération (y compris le pipeline
+avancé : multi-représentation, RAG-Fusion, re-ranking, CRAG, Self-RAG).
 """
 
 import os
@@ -16,15 +14,64 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Authentification -------------------------------------------------------
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+# Plusieurs clés permettent la rotation automatique sur quota 429.
+# Définir GOOGLE_API_KEY (obligatoire), puis optionnellement GOOGLE_API_KEY_2,
+# GOOGLE_API_KEY_3, GOOGLE_API_KEY_4 dans le .env pour augmenter le quota.
+GOOGLE_API_KEYS: list[str] = [
+    k
+    for k in [
+        os.environ.get("GOOGLE_API_KEY", ""),
+        os.environ.get("GOOGLE_API_KEY_2", ""),
+        os.environ.get("GOOGLE_API_KEY_3", ""),
+        os.environ.get("GOOGLE_API_KEY_4", ""),
+    ]
+    if k
+]
+GOOGLE_API_KEY = GOOGLE_API_KEYS[0] if GOOGLE_API_KEYS else ""
 
-# --- Modèles Gemini ---------------------------------------------------------
-# IMPORTANT : le modèle d'embedding doit rester identique à celui utilisé par
-# P1 pour construire la base, sinon les vecteurs ne sont pas comparables.
+# --- Modèles d'embedding ----------------------------------------------------
+# IMPORTANT : provider ET modèle doivent rester IDENTIQUES entre l'indexation
+# et l'interrogation — tout changement impose de reconstruire l'index.
+#
+# Fournisseur actif : "gemini" (défaut) ou "huggingface" (local, sans quota).
+#   EMBEDDING_PROVIDER=huggingface  → aucun quota, modèle téléchargé localement.
+#   EMBEDDING_PROVIDER=gemini       → API Gemini, rotation auto sur 429 si
+#                                     plusieurs GOOGLE_API_KEY_* définis.
+EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "gemini")
+
+# Modèle HuggingFace utilisé quand EMBEDDING_PROVIDER="huggingface".
+# Recommandations (French-friendly, par ordre qualité/poids) :
+#   paraphrase-multilingual-mpnet-base-v2  — 768 dims, ~420 MB (défaut)
+#   paraphrase-multilingual-MiniLM-L12-v2 — 384 dims, ~120 MB (léger)
+#   BAAI/bge-m3                            — 1024 dims, ~570 MB (excellent)
+#   dangvantuan/sentence-camembert-large   — 1024 dims, ~1.3 GB (FR natif)
+HF_EMBEDDING_MODEL: str = os.environ.get(
+    "HF_EMBEDDING_MODEL",
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+)
+
+# Modèle Gemini (utilisé quand EMBEDDING_PROVIDER="gemini").
 EMBEDDING_MODEL = "models/gemini-embedding-001"
-# gemini-2.0-flash renvoyait un quota free tier à 0 sur ce projet ;
-# gemini-2.5-flash est disponible. Ajustable selon le quota du compte.
+
+# --- Fournisseur LLM --------------------------------------------------------
+# "gemini" (défaut) → API Google Gemini (ChatGoogleGenerativeAI).
+# "groq"            → API Groq Cloud (ChatGroq), LLM open-source ultra-rapide.
+#                     Prérequis : uv add langchain-groq
+#                     Définir GROQ_API_KEY dans le .env.
+LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini")
+
+# Clé et modèle Groq (ignorés si LLM_PROVIDER="gemini").
+# Modèles Groq disponibles (gratuits) : llama3-8b-8192, llama3-70b-8192,
+# mixtral-8x7b-32768, gemma2-9b-it … Voir : https://console.groq.com/docs/models
+GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL: str = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+
+# Modèle Gemini (ignoré si LLM_PROVIDER="groq").
 LLM_MODEL = "gemini-2.5-flash"
+# Température de génération (le notebook prototype utilisait 0.3).
+LLM_TEMPERATURE = 0.3
+# Les graders (CRAG, Self-RAG) doivent être déterministes → température 0.
+GRADER_TEMPERATURE = 0.0
 
 # --- Sources : wiki Fandom FR du Labyrinthe (Maze Runner) -------------------
 WIKI_BASE_URL = "https://mazerunner.fandom.com"
@@ -81,36 +128,65 @@ _WIKI_PATHS = [
 WIKI_URLS = [WIKI_BASE_URL + path for path in _WIKI_PATHS]
 
 # --- Nettoyage / filtrage ---------------------------------------------------
-# Pages plus courtes que ce seuil ignorées au chargement (page quasi vide).
-MIN_PAGE_CHARS = 500
-# Documents plus courts que ce seuil écartés avant chunking (faible valeur).
-MIN_DOC_CHARS = 600
-# Délai (s) entre deux requêtes à l'API du wiki (politesse / anti-throttle).
-REQUEST_DELAY = 0.3
-# En-tête User-Agent envoyé à l'API MediaWiki.
+MIN_PAGE_CHARS = 500   # page quasi vide ignorée au chargement
+MIN_DOC_CHARS = 600    # document écarté avant chunking
+REQUEST_DELAY = 0.3    # délai (s) entre deux requêtes à l'API du wiki
 USER_AGENT = "MazeRunnerRAG/1.0 (projet pédagogique LO17 UTC)"
 
-# --- Chunking ---------------------------------------------------------------
+# --- Chunking (pipeline simple / legacy) ------------------------------------
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 CHUNK_SEPARATORS = ["\n\n", "\n", ".", " "]
+
+# --- Indexation multi-représentation (Parent Document Retriever) ------------
+# Petits "enfants" embarqués dans Chroma ; gros "parents" stockés à part.
+PARENT_CHUNK_SIZE = 1500
+PARENT_CHUNK_OVERLAP = 200
+CHILD_CHUNK_SIZE = 250
+CHILD_CHUNK_OVERLAP = 50
 
 # --- Indexation (embeddings) ------------------------------------------------
 # Indexation par batchs avec pause pour respecter le quota de l'API Gemini.
 EMBED_BATCH_SIZE = 80
 EMBED_PAUSE = 65  # secondes
 
-# --- Base vectorielle Chroma ------------------------------------------------
+# --- Bases vectorielles / docstore ------------------------------------------
+# Base "simple" historique (chunks de 1000 car.) — chemin RAG naïf conservé.
 CHROMA_PERSIST_DIR = "./chroma_maze_runner"
-# Nom de collection par défaut de LangChain/Chroma (utilisé par P1 dans le
-# notebook, qui n'a pas passé de collection_name explicite).
 CHROMA_COLLECTION_NAME = "langchain"
 
-# --- Récupération -----------------------------------------------------------
+# Index avancé parent-enfant.
+CHILD_CHROMA_DIR = "./chroma_children"
+CHILD_COLLECTION_NAME = "maze_children"
+PARENT_DOCSTORE_DIR = "./parent_docstore"
+
+# --- Récupération simple (legacy) -------------------------------------------
 RETRIEVER_K = 4
-# Seuil de similarité cosinus en dessous duquel un document est ignoré.
-# Première barrière anti-hallucination (cf. src/rag.py).
-SIMILARITY_THRESHOLD = 0.5
+SIMILARITY_THRESHOLD = 0.5  # seuil cosinus du pipeline simple
+
+# --- Pipeline avancé : Multi-Query / RAG-Fusion -----------------------------
+NUM_QUERIES = 3            # nombre de reformulations générées
+CHILD_SEARCH_K = 10        # enfants récupérés par requête (avant fusion)
+RRF_K = 60                 # constante de la Reciprocal Rank Fusion
+FUSION_TOP_N = 15          # parents conservés après fusion (entrée du reranker)
+
+# --- Re-ranking (FlashRank, local) ------------------------------------------
+RERANK_TOP_N = 4                       # documents conservés après reranking
+RERANKER_MODEL = "ms-marco-MultiBERT-L-12"  # modèle multilingue (FR ok)
+
+# --- CRAG (Corrective RAG) --------------------------------------------------
+CRAG_RELEVANT = "PERTINENT"
+CRAG_AMBIGUOUS = "AMBIGU"
+CRAG_IRRELEVANT = "HORS-SUJET"
+
+# --- Self-RAG (auto-évaluation) ---------------------------------------------
+MAX_CORRECTIONS = 1  # nombre de passes de correction si la réponse échoue
+
+# --- Interrupteurs d'étapes (utiles pour l'évaluation comparative) ----------
+USE_MULTIQUERY = True
+USE_RERANK = True
+USE_CRAG = True
+USE_SELF_RAG = True
 
 # --- Réponse de repli (anti-hallucination) ----------------------------------
 FALLBACK_ANSWER = (

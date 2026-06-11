@@ -14,4 +14,6 @@ dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
     "streamlit>=1.40",
+    "flashrank>=0.2.10",
+    "langchain-groq>=1.1.3",
 ]

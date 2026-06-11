@@ -1,139 +1,250 @@
-"""Pipeline RAG de bout en bout avec gestion des hallucinations.
+"""Pipeline RAG avancé avec gestion des hallucinations.
 
-Orchestration de la couche question-réponse par-dessus la base Chroma déjà
-construite par P1 (connexion en lecture seule) :
+Orchestration de bout en bout (couche B), par-dessus l'index parent-enfant :
 
-    1. **Récupération** des k chunks les plus proches, avec calcul du score de
-       similarité **cosinus** entre la requête et chaque chunk.
-    2. **Filtre par seuil** (anti-hallucination n°1) : on écarte tout chunk
-       dont le score cosinus est inférieur à ``SIMILARITY_THRESHOLD``.
-    3. **Réponse de repli** (anti-hallucination n°2) : si plus aucun chunk ne
-       passe le seuil, on renvoie ``FALLBACK_ANSWER`` sans appeler le LLM.
-    4. **Génération** : sinon, on assemble le contexte et on interroge le LLM
-       via la chaîne de génération.
+    1. Multi-Query  — reformulations de la question.
+    2. RAG-Fusion   — recherche par requête + Reciprocal Rank Fusion (RRF).
+    3. Re-Ranking   — FlashRank : top 15 fusionné → top 4 sémantique.
+    4. CRAG         — un LLM juge la pertinence du contexte (PERTINENT /
+                      AMBIGU / HORS-SUJET) ; repli propre si insuffisant.
+    5. Génération   — réponse ancrée au contexte (Gemini).
+    6. Self-RAG     — auto-évaluation (fidélité + pertinence) puis correction.
 
-Le score cosinus est recalculé manuellement à partir des vecteurs stockés
-(plutôt que via le score de distance brut de Chroma), afin que le seuil de
-0.5 ait une signification stable quelle que soit la métrique de la collection.
+Chaque étape est tracée par des logs clairs visibles depuis ``main.py``.
+Des interrupteurs (``USE_*`` dans ``config.py``) permettent d'activer/désactiver
+chaque brique — pratique pour l'évaluation comparative.
 """
+
+import logging
 
 from langchain_core.documents import Document
 
 from src.config import (
+    CHILD_SEARCH_K,
+    CRAG_AMBIGUOUS,
+    CRAG_IRRELEVANT,
+    CRAG_RELEVANT,
     FALLBACK_ANSWER,
-    RETRIEVER_K,
-    SIMILARITY_THRESHOLD,
+    FUSION_TOP_N,
+    MAX_CORRECTIONS,
+    NUM_QUERIES,
+    RERANK_TOP_N,
+    RRF_K,
+    USE_CRAG,
+    USE_MULTIQUERY,
+    USE_RERANK,
+    USE_SELF_RAG,
 )
-from src.generator import build_generation_chain, format_docs
-from src.vectorstore import get_embeddings, load_vectorstore
+from src.generator import (
+    build_correction_chain,
+    build_crag_grader_chain,
+    build_generation_chain,
+    build_multiquery_chain,
+    build_selfrag_chain,
+    format_docs,
+)
+from src.prompts import CRAG_INSUFFICIENT_NOTICE
+from src.retrieval import (
+    fusion_retrieve,
+    generate_query_variants,
+    rerank_documents,
+)
+from src.vectorstore import (
+    advanced_index_exists,
+    get_child_vectorstore,
+    get_parent_docstore,
+)
 
-
-def _cosine_similarity(vec_a, vec_b) -> float:
-    """Similarité cosinus entre deux vecteurs (Python pur, sans dépendance)."""
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
-    norm_a = sum(a * a for a in vec_a) ** 0.5
-    norm_b = sum(b * b for b in vec_b) ** 0.5
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+logger = logging.getLogger(__name__)
 
 
 class RagPipeline:
-    """Pipeline de question-réponse RAG avec garde-fous anti-hallucination."""
+    """Pipeline RAG avancé (Multi-Query, RAG-Fusion, Re-Ranking, CRAG, Self-RAG)."""
 
     def __init__(
         self,
-        k: int = RETRIEVER_K,
-        similarity_threshold: float = SIMILARITY_THRESHOLD,
+        verbose: bool = True,
+        use_multiquery: bool = USE_MULTIQUERY,
+        use_rerank: bool = USE_RERANK,
+        use_crag: bool = USE_CRAG,
+        use_self_rag: bool = USE_SELF_RAG,
     ):
-        """Initialise le pipeline.
+        if not advanced_index_exists():
+            raise FileNotFoundError(
+                "Index parent-enfant introuvable (chroma_children/ + "
+                "parent_docstore/). Construisez-le d'abord avec : "
+                "uv run python ingest.py"
+            )
 
-        Args:
-            k: nombre de chunks récupérés par requête.
-            similarity_threshold: score cosinus minimal pour retenir un chunk.
-        """
-        self.k = k
-        self.similarity_threshold = similarity_threshold
-        self.embeddings = get_embeddings()
-        # Connexion en lecture seule à la base construite par P1.
-        self.vectorstore = load_vectorstore()
+        self.verbose = verbose
+        self.use_multiquery = use_multiquery
+        self.use_rerank = use_rerank
+        self.use_crag = use_crag
+        self.use_self_rag = use_self_rag
+
+        # Stockages (lecture seule pour la couche requête).
+        self.child_vectorstore = get_child_vectorstore()
+        self.docstore = get_parent_docstore()
+
+        # Chaînes LLM.
+        self.multiquery_chain = build_multiquery_chain()
         self.generation_chain = build_generation_chain()
+        self.crag_chain = build_crag_grader_chain()
+        self.selfrag_chain = build_selfrag_chain()
+        self.correction_chain = build_correction_chain()
 
-    def retrieve(self, question: str, k: int | None = None) -> list[tuple[Document, float]]:
-        """Récupère les k chunks les plus proches avec leur score cosinus.
+    # -- utilitaires --------------------------------------------------------
+    def _log(self, message: str) -> None:
+        if self.verbose:
+            logger.info(message)
+        else:
+            logger.debug(message)
+
+    @staticmethod
+    def _sources(docs: list[Document]) -> list[dict]:
+        sources = []
+        for doc in docs:
+            score = doc.metadata.get("relevance_score")
+            sources.append(
+                {
+                    "title": doc.metadata.get("title", "?"),
+                    "source": doc.metadata.get("source", "?"),
+                    "score": round(float(score), 4) if score is not None else None,
+                }
+            )
+        return sources
+
+    def _fallback(self, crag_status: str, queries: list[str]) -> dict:
+        return {
+            "answer": FALLBACK_ANSWER,
+            "grounded": False,
+            "crag_status": crag_status,
+            "sources": [],
+            "queries": queries,
+            "self_rag": "n/a",
+        }
+
+    # -- étapes -------------------------------------------------------------
+    def _grade_crag(self, question: str, context: str) -> str:
+        verdict = self.crag_chain.invoke(
+            {"question": question, "context": context}
+        ).strip().upper()
+        for status in (CRAG_IRRELEVANT, CRAG_AMBIGUOUS, CRAG_RELEVANT):
+            if status in verdict:
+                return status
+        # Par prudence, un verdict illisible est traité comme AMBIGU.
+        return CRAG_AMBIGUOUS
+
+    def _self_reflect(self, question: str, context: str, answer: str) -> tuple[str, str]:
+        """Auto-évalue puis corrige éventuellement la réponse.
 
         Returns:
-            Liste de couples ``(Document, score_cosinus)`` triée par score
-            décroissant.
+            (réponse_finale, statut_self_rag).
         """
-        k = k or self.k
-        query_vec = self.embeddings.embed_query(question)
+        for attempt in range(MAX_CORRECTIONS + 1):
+            verdict = self.selfrag_chain.invoke(
+                {"question": question, "context": context, "answer": answer}
+            ).strip()
 
-        # On interroge directement la collection Chroma pour récupérer aussi
-        # les vecteurs stockés (nécessaires au calcul du cosinus).
-        result = self.vectorstore._collection.query(
-            query_embeddings=[query_vec],
-            n_results=k,
-            include=["documents", "metadatas", "embeddings"],
-        )
+            if verdict.upper().startswith("OK"):
+                self._log("[Self-RAG] Validation: OK")
+                return answer, "OK"
 
-        documents = result.get("documents", [[]])[0]
-        metadatas = result.get("metadatas", [[]])[0]
-        embeddings = result.get("embeddings", [[]])[0]
+            critique = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+            if attempt < MAX_CORRECTIONS:
+                self._log(
+                    f"[Self-RAG] Validation: A_CORRIGER → correction "
+                    f"({attempt + 1}/{MAX_CORRECTIONS}) : {critique[:80]}"
+                )
+                answer = self.correction_chain.invoke(
+                    {
+                        "question": question,
+                        "context": context,
+                        "answer": answer,
+                        "critique": critique,
+                    }
+                )
+            else:
+                self._log("[Self-RAG] Validation: A_CORRIGER (limite de corrections atteinte)")
+                return answer, "A_CORRIGER"
+        return answer, "OK"
 
-        scored: list[tuple[Document, float]] = []
-        for text, metadata, embedding in zip(documents, metadatas, embeddings):
-            score = _cosine_similarity(query_vec, embedding)
-            doc = Document(page_content=text, metadata=metadata or {})
-            scored.append((doc, score))
-
-        scored.sort(key=lambda pair: pair[1], reverse=True)
-        return scored
-
+    # -- point d'entrée -----------------------------------------------------
     def answer(self, question: str) -> dict:
-        """Répond à une question avec gestion des hallucinations.
+        """Répond à une question via le pipeline RAG avancé complet."""
+        self._log(f"\n=== Question : {question} ===")
 
-        Returns:
-            Un dict :
-            - ``answer`` : la réponse (ou la réponse de repli) ;
-            - ``grounded`` : ``True`` si la réponse s'appuie sur le wiki ;
-            - ``sources`` : liste de dicts ``{title, source, score}`` ;
-            - ``scores`` : scores cosinus des chunks retenus.
-        """
-        scored = self.retrieve(question)
-        kept = [
-            (doc, score)
-            for doc, score in scored
-            if score >= self.similarity_threshold
-        ]
+        # 1. Multi-Query ----------------------------------------------------
+        if self.use_multiquery:
+            queries = generate_query_variants(
+                question, self.multiquery_chain, NUM_QUERIES
+            )
+            self._log(
+                f"[Multi-Query] {len(queries) - 1} variante(s) générée(s) "
+                f"(+ question originale)"
+            )
+        else:
+            queries = [question]
 
-        # Anti-hallucination : aucun contexte fiable → repli, sans appeler le LLM.
-        if not kept:
-            return {
-                "answer": FALLBACK_ANSWER,
-                "grounded": False,
-                "sources": [],
-                "scores": [],
-            }
+        # 2. RAG-Fusion (RRF) ----------------------------------------------
+        fused = fusion_retrieve(
+            queries,
+            self.child_vectorstore,
+            self.docstore,
+            k=CHILD_SEARCH_K,
+            rrf_k=RRF_K,
+            top_n=FUSION_TOP_N,
+        )
+        self._log(f"[RAG-Fusion] {len(fused)} parents fusionnés via RRF")
+        candidates = [doc for doc, _ in fused]
 
-        context = format_docs([doc for doc, _ in kept])
+        if not candidates:
+            self._log("[RAG-Fusion] Aucun document récupéré → repli")
+            return self._fallback(CRAG_IRRELEVANT, queries)
+
+        # 3. Re-Ranking -----------------------------------------------------
+        if self.use_rerank:
+            top_docs = rerank_documents(question, candidates, RERANK_TOP_N)
+            self._log(
+                f"[Re-Ranking] top {len(top_docs)}/{len(candidates)} retenus "
+                f"(FlashRank)"
+            )
+        else:
+            top_docs = candidates[:RERANK_TOP_N]
+
+        # 4. CRAG -----------------------------------------------------------
+        context = format_docs(top_docs)
+        crag_status = CRAG_RELEVANT
+        if self.use_crag:
+            crag_status = self._grade_crag(question, context)
+            self._log(f"[CRAG] Statut: {crag_status}")
+
+            if crag_status == CRAG_IRRELEVANT:
+                self._log("[CRAG] Hors-sujet → repli (génération non appelée)")
+                return self._fallback(crag_status, queries)
+
+            if crag_status == CRAG_AMBIGUOUS:
+                # On prévient explicitement le LLM que le contexte peut manquer.
+                context = CRAG_INSUFFICIENT_NOTICE + context
+
+        # 5. Génération -----------------------------------------------------
         answer = self.generation_chain.invoke(
             {"context": context, "question": question}
         )
+        self._log("[Génération] réponse produite")
 
-        sources = [
-            {
-                "title": doc.metadata.get("title", "?"),
-                "source": doc.metadata.get("source", "?"),
-                "score": round(score, 4),
-            }
-            for doc, score in kept
-        ]
+        # 6. Self-RAG -------------------------------------------------------
+        self_rag_status = "désactivé"
+        if self.use_self_rag:
+            answer, self_rag_status = self._self_reflect(question, context, answer)
+
         return {
             "answer": answer,
             "grounded": True,
-            "sources": sources,
-            "scores": [round(score, 4) for _, score in kept],
+            "crag_status": crag_status,
+            "sources": self._sources(top_docs),
+            "queries": queries,
+            "self_rag": self_rag_status,
         }
 
 

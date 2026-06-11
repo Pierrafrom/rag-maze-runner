@@ -19,6 +19,189 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-11 — Support multi-provider LLM (Gemini / Groq) + système de logs
+
+**Quoi** : `src/config.py`, `src/generator.py`, `src/logging_config.py` *(nouveau)*,
+`src/rag.py`, `src/retrieval.py`, `src/loader.py`, `src/vectorstore.py`,
+`main.py`, `ingest.py`, `.env.example`, `pyproject.toml` + `uv.lock`
+
+- **LLM provider** (`src/config.py`) : ajout de `LLM_PROVIDER` (`"gemini"` |
+  `"groq"`), `GROQ_API_KEY`, `GROQ_MODEL` (défaut `llama3-8b-8192`).
+- **`src/generator.py`** : `get_llm()` rendu agnostique — instancie
+  `ChatGoogleGenerativeAI` ou `ChatGroq` selon `LLM_PROVIDER` ; import lazy de
+  `langchain_groq` avec message d'erreur clair si absent.
+- **`src/logging_config.py`** : nouveau module, `setup_logging(level)` configure
+  le logger racine (format : `AAAA-MM-JJ HH:MM:SS [LEVEL] nom.module | message`,
+  bruit des libs tierces réduit au niveau WARNING).
+- **Migration logging** : tous les `print()` internes des modules `src/` migrés
+  vers `logger.info()` / `logger.warning()` / `logger.debug()`. Règle : seule
+  la sortie finale destinée à l'utilisateur dans `main.py` conserve `print()`.
+  `src/rag.py._log()` route sur `logger.info()` (verbose=True) ou
+  `logger.debug()` (verbose=False).
+- **`main.py` + `ingest.py`** : appel `setup_logging()` au démarrage ; vérification
+  de clé adaptée selon `LLM_PROVIDER` / `EMBEDDING_PROVIDER`.
+- **`langchain-groq==1.1.3`** ajouté via `uv add langchain-groq`.
+
+**Pourquoi** : (1) flexibilité infrastructure — pouvoir basculer Gemini ↔ Groq
+via une variable d'env sans modifier le code ; (2) conformité à la convention
+de logs CLAUDE.md (module `logging`, pas de `print()` dans `src/`).
+
+**Alternatives écartées** : support Ollama (local, mais trop lourd pour
+déploiement) ; `langchain-openai` (payant, hors périmètre).
+
+### 2026-06-11 — Rotation de clés API et alternatives d'embedding (quota 429 journalier)
+
+**Quoi** : `src/config.py`, `src/vectorstore.py`, `.env.example`
+- `src/config.py` : ajout de `GOOGLE_API_KEYS` (lit `GOOGLE_API_KEY` +
+  `GOOGLE_API_KEY_2/3/4`), `EMBEDDING_PROVIDER` (`"gemini"` | `"huggingface"`),
+  `HF_EMBEDDING_MODEL` (modèle sentence-transformers à utiliser en local).
+- `src/vectorstore.py` : nouvelle classe `RotatingGeminiEmbeddings` (implémente
+  `langchain_core.embeddings.Embeddings`) qui bascule vers la clé suivante sur
+  `429 RESOURCE_EXHAUSTED` ; `get_embeddings()` mis à jour pour gérer les trois
+  cas : Gemini mono-clé (comportement inchangé), Gemini multi-clés (rotation),
+  HuggingFace local (aucun quota).
+- `.env.example` : documentation des nouvelles variables.
+
+**Pourquoi** : quota free tier atteint (`embed_content_free_tier_requests`,
+1 000 req./jour/clé). La rotation permet d'utiliser plusieurs comptes Google
+pour multiplier le quota. La voie HuggingFace (`langchain-huggingface` +
+`sentence-transformers`) est offerte comme alternative sans quota, locale.
+
+**Alternatives écartées** : OpenAI / Cohere (autres API payantes, hors scope) ;
+attendre la réinitialisation journalière (bloquant pour l'ingestion complète).
+
+**Remarque** : changer de provider ou de modèle d'embedding impose de
+reconstruire l'index (`chroma_children/` + `parent_docstore/`).
+
+### 2026-06-11 — Correctif quota embeddings à l'ingestion (429 RESOURCE_EXHAUSTED)
+
+**Blocage rencontré**
+`uv run python ingest.py` échouait sur `429 RESOURCE_EXHAUSTED` —
+`embed_content_free_tier_requests, limit: 100` (soit **100 requêtes
+d'embedding par minute** en free tier).
+
+**Cause**
+La 1re version de `build_parent_document_index` regroupait par **documents**
+(10 docs/lot) et déléguait à `ParentDocumentRetriever.add_documents`, qui
+embarque **tous les enfants du lot d'un seul coup** : un lot de 10 documents =
+plusieurs centaines d'enfants embarqués en une fois → dépassement immédiat des
+100/min. (La base simple passait car elle indexait par lots de 80 *chunks* avec
+pause de 65 s.)
+
+**Correctif (`src/vectorstore.py`)**
+- `_split_parent_child()` : découpage parent/enfant **local** (aucun appel
+  réseau), reproduisant la logique interne du retriever (parent_id par parent,
+  `metadata['doc_id']` sur chaque enfant, titre/source propagés).
+- Parents rangés dans le docstore via `docstore.mset()` (aucun appel API).
+- Enfants embarqués **par lots de 80 avec pauses de 65 s** (≈ requêtes/minute,
+  comme la base simple qui passait) via `_add_children_with_retry()` qui
+  **réessaie automatiquement** en cas de 429 (jusqu'à 5 fois).
+- Logs préfixés `[Ingestion]` / `[Vectorstore]`.
+
+**Nettoyage**
+- Le run échoué avait laissé un index **partiel** (`chroma_children/` 184 K,
+  `parent_docstore/` absent). Supprimé pour repartir d'une base propre.
+
+**Validation**
+- `_split_parent_child` testé sans API : 1 doc ~2760 car → 2 parents (~1494) +
+  16 enfants (~243), `doc_id` cohérents, titre propagé. ✅
+
+### 2026-06-11 — Convention de logs ajoutée à CLAUDE.md
+
+**Quoi**
+- Ajout d'une section **« Convention de logs (OBLIGATOIRE) »** dans `CLAUDE.md` :
+  usage du module `logging` (logger par module), configuration centralisée
+  prévue dans `src/logging_config.py` (`setup_logging`), format standard,
+  préfixes d'étape FR (`[Multi-Query]`, `[CRAG]`, …), niveaux INFO/DEBUG/
+  WARNING/ERROR, et règle « un log d'entrée + un log de résultat par fonction
+  importante ».
+
+**Pourquoi**
+- Demande de l'utilisateur : garantir que tout code créé soit facilement
+  traçable. Centralise une règle claire que je suivrai pour le code futur.
+
+**Reste à faire**
+- Implémenter `src/logging_config.py` et migrer les `print` préfixés actuels du
+  `RagPipeline` vers ce logger (proposé à l'utilisateur).
+
+### 2026-06-11 — Pipeline RAG avancé (multi-représentation, RAG-Fusion, re-ranking, CRAG, Self-RAG)
+
+**Objectif**
+Faire évoluer le RAG « simple » (cosinus + seuil) vers une architecture avancée
+en 6 étapes, répartie dans les modules existants + un nouveau module
+`src/retrieval.py`.
+
+**Analyse préalable de `rag.ipynb` (imposée)**
+Le notebook implémente le multi-query via
+`from langchain_classic.retrievers.multi_query import MultiQueryRetriever` puis
+`MultiQueryRetriever.from_llm(retriever, llm)` (cellules 19-23), avec
+`ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)`. Ce
+retriever génère des reformulations par LLM puis fait l'**union** des résultats.
+Je m'en suis inspiré pour la *génération des reformulations* (prompt FR dédié,
+nombre fixe) mais j'ai remplacé l'union par une **fusion RRF** (vrai RAG-Fusion,
+demandé).
+
+**Ce qui a été fait, par composant**
+1. **Indexation multi-représentation (Parent Document Retriever)** —
+   `src/vectorstore.py` : enfants ~250 car. embarqués dans Chroma
+   `chroma_children/` + parents ~1500 car. dans un docstore **persistant**
+   `parent_docstore/` (`LocalFileStore` + `create_kv_docstore`). `src/loader.py`
+   ajoute `load_clean_documents()` (docs complets, le découpage parent/enfant
+   est délégué au retriever). `ingest.py` construit cet index par lots avec
+   pauses (quota embeddings). Au retrieval, un enfant sélectionné fait remonter
+   son parent (via `metadata['doc_id']`).
+2. **Multi-Query / RAG-Fusion (RRF)** — `src/retrieval.py` :
+   `generate_query_variants` (3 reformulations FR + question d'origine),
+   `search_parents_for_query` (recherche enfants → parents dédupliqués),
+   `reciprocal_rank_fusion` (score = Σ 1/(k+rang), k=60), `fusion_retrieve`
+   (top 15).
+3. **Re-Ranking** — `src/retrieval.py` : `FlashrankRerank`
+   (`ms-marco-MultiBERT-L-12`, local, multilingue) ; top 15 → top 4.
+4. **CRAG** — `src/rag.py` + `src/prompts.py` : un LLM (temp 0) note le contexte
+   `PERTINENT | AMBIGU | HORS-SUJET`. HORS-SUJET → repli sans appeler le LLM de
+   génération ; AMBIGU → avertissement injecté dans le prompt.
+5. **Self-RAG** — `src/rag.py` + `src/generator.py` + `src/prompts.py` :
+   auto-évaluation (fidélité + pertinence) après génération ; si `A_CORRIGER`,
+   une passe de correction (`MAX_CORRECTIONS=1`) avant renvoi.
+   - `src/config.py` : tous les nouveaux paramètres + interrupteurs
+     `USE_MULTIQUERY/RERANK/CRAG/SELF_RAG` (utiles pour l'évaluation comparative).
+   - `src/generator.py` : chaînes LCEL génération / multi-query / CRAG /
+     Self-RAG / correction.
+   - `main.py` : affichage enrichi (statut CRAG, Self-RAG, sources + score).
+   - Logs élégants à chaque étape : `[Multi-Query]`, `[RAG-Fusion]`,
+     `[Re-Ranking]`, `[CRAG] Statut: …`, `[Génération]`, `[Self-RAG] Validation: …`.
+
+**Dépendances**
+- `uv add flashrank` (→ `flashrank>=0.2.10` dans `pyproject.toml` + `uv.lock`).
+
+**Découvertes / points techniques (env langchain 1.x)**
+- Le méta-paquet `langchain` n'est pas installé : les retrievers/stores
+  « classiques » vivent dans **`langchain_classic`** (`langchain_classic.retrievers`
+  pour `MultiQueryRetriever` et `ParentDocumentRetriever`,
+  `langchain_classic.storage` pour `LocalFileStore`/`create_kv_docstore`).
+- `LocalFileStore` n'est PAS dans `langchain_core.stores` ici → importé depuis
+  `langchain_classic.storage`.
+- Garde-fou `USE_TF=0` déplacé dans `src/__init__.py` (s'applique avant tout
+  sous-module ; `vectorstore.py` importe désormais aussi le text-splitter).
+
+**Validation effectuée (sans l'index complet)**
+- `py_compile` + chaîne d'imports complète OK (env uv).
+- RRF : ordre correct (un parent présent dans 2 listes remonte 1er).
+- Multi-Query : parsing robuste (puces/ lignes vides retirées, question
+  d'origine en tête, déduplication).
+- FlashRank : modèle multilingue téléchargé (98,7 Mo, mis en cache) ;
+  reranking correct (« Qui a créé le Labyrinthe ? » → « Thomas » 0.999, doc
+  hors-sujet écarté).
+
+**Reste à faire (côté utilisateur)**
+- Lancer `uv run python ingest.py` pour construire l'index parent-enfant
+  (~1000+ enfants à embarquer → ~15 min + quota embeddings Gemini), puis
+  `uv run python main.py "Quel est le but de WICKED ?"` pour le test end-to-end.
+- L'ancienne base `chroma_maze_runner/` (pipeline simple) reste disponible pour
+  comparer « RAG naïf vs avancé » dans le rapport.
+
+---
+
 ### 2026-06-11 — Passage à uv pour la gestion des dépendances
 
 **Quoi**
