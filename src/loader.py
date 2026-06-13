@@ -46,7 +46,7 @@ from src.config import (
 
 def _page_name_from_url(url: str) -> str:
     """Extrait le nom de page MediaWiki (décodé) depuis une URL ``/fr/wiki/...``."""
-    return unquote(url.split("/fr/wiki/")[-1])
+    return unquote(url.rsplit("/fr/wiki/", 1)[-1])
 
 
 def load_wiki_page(url: str, min_chars: int = MIN_PAGE_CHARS) -> Document | None:

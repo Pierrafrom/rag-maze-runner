@@ -91,7 +91,7 @@ def search_parents_for_query(
     parents = docstore.mget(ordered_ids)
     return [
         (pid, pdoc)
-        for pid, pdoc in zip(ordered_ids, parents)
+        for pid, pdoc in zip(ordered_ids, parents, strict=False)
         if pdoc is not None
     ]
 

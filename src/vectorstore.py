@@ -297,7 +297,7 @@ def _add_children_with_retry(
         try:
             child_vectorstore.add_documents(children)
             return
-        except Exception as exc:  # noqa: BLE001 — on filtre sur le message
+        except Exception as exc:
             message = str(exc)
             is_quota = "RESOURCE_EXHAUSTED" in message or "429" in message
             if not is_quota or attempt == max_retries:

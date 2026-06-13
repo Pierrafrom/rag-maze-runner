@@ -249,12 +249,12 @@ class RagPipeline:
 
 
 # Singleton paresseux pour les usages simples (CLI, scripts).
-_pipeline: RagPipeline | None = None
+# Stocké dans un conteneur mutable pour éviter le `global`.
+_pipeline_ref: list[RagPipeline] = []
 
 
 def answer_question(question: str) -> dict:
     """Répond à une question via un ``RagPipeline`` partagé (instancié à la demande)."""
-    global _pipeline
-    if _pipeline is None:
-        _pipeline = RagPipeline()
-    return _pipeline.answer(question)
+    if not _pipeline_ref:
+        _pipeline_ref.append(RagPipeline())
+    return _pipeline_ref[0].answer(question)

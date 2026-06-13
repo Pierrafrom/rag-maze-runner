@@ -1,6 +1,5 @@
 .env
 .claude/
-.github/
 CLAUDE.md
 chroma_db/
 __pycache__/
