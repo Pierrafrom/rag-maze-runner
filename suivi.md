@@ -19,6 +19,38 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-13 — Tooling complet : ruff, mypy strict, pytest, copilot instructions
+
+**Quoi** : `pyproject.toml`, `.gitignore`, `.github/copilot-instructions.md`,
+`CLAUDE.md`, `src/loader.py`, `src/rag.py`, `src/retrieval.py`,
+`src/vectorstore.py`, `tests/` *(nouveau)*
+
+- **`pyproject.toml`** : ajout du groupe de dépendances dev (`mypy>=1.10`,
+  `ruff>=0.6`, `pytest>=8.0`, `pytest-cov>=5.0`, `pytest-mock>=3.14`,
+  `types-requests`, `types-beautifulsoup4`) + configurations `[tool.mypy]`
+  (strict), `[tool.ruff]` (lint + format), `[tool.pytest.ini_options]`
+  (marqueurs `unit`/`integration`, testpaths), `[tool.coverage]`.
+- **`.gitignore`** : `.github/` retiré — `copilot-instructions.md` doit être
+  versionné pour être lu par GitHub Copilot.
+- **`.github/copilot-instructions.md`** : réécriture complète (architecture
+  du pipeline, commandes dev, conventions typage/logging/tests, patterns
+  courants, liste des choses à ne pas faire).
+- **`CLAUDE.md`** : refonte — expertise par domaine (LangChain, Gemini, Chroma,
+  FlashRank, Streamlit, patterns RAG avancés), stratégie de debug économe en
+  tokens (4 niveaux), conventions typage strict Python 3.11, logs normés,
+  structure de tests obligatoire.
+- **Corrections ruff** : `zip(strict=False)` dans `retrieval.py` (B905),
+  `rsplit(maxsplit=1)` dans `loader.py` (PLC0207), singleton sans `global`
+  dans `rag.py` (PLW0603), suppression noqa obsolète dans `vectorstore.py`.
+- **`tests/`** : 45 tests unitaires (`test_loader.py`, `test_retrieval.py`,
+  `test_vectorstore.py`) + `conftest.py` avec fixtures mocks (LLM, embeddings,
+  documents factices). Marqueurs `@pytest.mark.unit` / `@pytest.mark.integration`.
+
+**Pourquoi** : outillage qualité demandé — mypy strict pour la détection
+précoce d'erreurs de type, ruff pour la cohérence du style, pytest avec mocks
+pour tester la logique pure sans appel API. Les tests unitaires permettent
+d'isoler rapidement les régressions lors des ajouts futurs (Streamlit, éval).
+
 ### 2026-06-11 — Support multi-provider LLM (Gemini / Groq) + système de logs
 
 **Quoi** : `src/config.py`, `src/generator.py`, `src/logging_config.py` *(nouveau)*,
