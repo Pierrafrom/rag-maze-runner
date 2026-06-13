@@ -19,6 +19,27 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-13 — Flag --force pour reconstruction de l'index dans ingest.py
+
+**Quoi** : `ingest.py`
+
+- Ajout du flag `--force` / `-f` via `argparse` : si l'index existe et que le
+  flag est passé, les dossiers `chroma_children/` et `parent_docstore/` sont
+  supprimés (`shutil.rmtree`) avant reconstruction.
+- Sans `--force`, le comportement précédent est conservé (skip + message).
+- Import de `CHILD_CHROMA_DIR` et `PARENT_DOCSTORE_DIR` depuis `src/config.py`.
+
+**Pourquoi** : la suppression manuelle des dossiers était fastidieuse.
+Alternative écartée : suppression automatique sans flag — trop destructive par
+défaut (quota Gemini consommé sans avertissement).
+
+**Choix de versionnement des stores** : `chroma_children/`, `parent_docstore/`
+et `chroma_maze_runner/` sont **versionnés** (non ignorés) afin de livrer un
+index fonctionnel sans avoir à relancer `ingest.py` (coûteux en quota). Le
+dépôt est donc plus lourd mais directement utilisable après `git clone`.
+
+---
+
 ### 2026-06-11 — Support multi-provider LLM (Gemini / Groq) + système de logs
 
 **Quoi** : `src/config.py`, `src/generator.py`, `src/logging_config.py` *(nouveau)*,
