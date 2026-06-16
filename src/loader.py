@@ -69,9 +69,7 @@ def load_wiki_page(url: str, min_chars: int = MIN_PAGE_CHARS) -> Document | None
         "format": "json",
     }
 
-    response = requests.get(
-        WIKI_API_URL, params=params, headers={"User-Agent": USER_AGENT}
-    )
+    response = requests.get(WIKI_API_URL, params=params, headers={"User-Agent": USER_AGENT})
     data = response.json()
 
     # L'API renvoie une clé "error" ou pas de "parse" quand la page n'existe pas.
@@ -88,9 +86,7 @@ def load_wiki_page(url: str, min_chars: int = MIN_PAGE_CHARS) -> Document | None
     # On ne garde que le texte des paragraphes.
     paragraphs = soup.find_all("p")
     text = "\n".join(
-        p.get_text(separator=" ", strip=True)
-        for p in paragraphs
-        if p.get_text(strip=True)
+        p.get_text(separator=" ", strip=True) for p in paragraphs if p.get_text(strip=True)
     )
 
     if len(text) < min_chars or "aucun texte sur cette page" in text.lower():
@@ -135,9 +131,7 @@ def load_all_documents(
     return documents
 
 
-def filter_documents(
-    documents: list[Document], min_chars: int = MIN_DOC_CHARS
-) -> list[Document]:
+def filter_documents(documents: list[Document], min_chars: int = MIN_DOC_CHARS) -> list[Document]:
     """Écarte les documents trop courts (faible valeur informative)."""
     return [doc for doc in documents if len(doc.page_content) >= min_chars]
 
@@ -169,9 +163,7 @@ def prepare_chunks(urls: list[str] = WIKI_URLS, verbose: bool = True) -> list[Do
     return chunks
 
 
-def load_clean_documents(
-    urls: list[str] = WIKI_URLS, verbose: bool = True
-) -> list[Document]:
+def load_clean_documents(urls: list[str] = WIKI_URLS, verbose: bool = True) -> list[Document]:
     """Charge et filtre les documents wiki SANS les découper.
 
     Utilisé par l'indexation avancée (Parent Document Retriever) : c'est le

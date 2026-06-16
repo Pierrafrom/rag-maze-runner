@@ -128,9 +128,9 @@ _WIKI_PATHS = [
 WIKI_URLS = [WIKI_BASE_URL + path for path in _WIKI_PATHS]
 
 # --- Nettoyage / filtrage ---------------------------------------------------
-MIN_PAGE_CHARS = 500   # page quasi vide ignorée au chargement
-MIN_DOC_CHARS = 600    # document écarté avant chunking
-REQUEST_DELAY = 0.3    # délai (s) entre deux requêtes à l'API du wiki
+MIN_PAGE_CHARS = 500  # page quasi vide ignorée au chargement
+MIN_DOC_CHARS = 600  # document écarté avant chunking
+REQUEST_DELAY = 0.3  # délai (s) entre deux requêtes à l'API du wiki
 USER_AGENT = "MazeRunnerRAG/1.0 (projet pédagogique LO17 UTC)"
 
 # --- Chunking (pipeline simple / legacy) ------------------------------------
@@ -165,13 +165,13 @@ RETRIEVER_K = 4
 SIMILARITY_THRESHOLD = 0.5  # seuil cosinus du pipeline simple
 
 # --- Pipeline avancé : Multi-Query / RAG-Fusion -----------------------------
-NUM_QUERIES = 3            # nombre de reformulations générées
-CHILD_SEARCH_K = 10        # enfants récupérés par requête (avant fusion)
-RRF_K = 60                 # constante de la Reciprocal Rank Fusion
-FUSION_TOP_N = 15          # parents conservés après fusion (entrée du reranker)
+NUM_QUERIES = 3  # nombre de reformulations générées
+CHILD_SEARCH_K = 10  # enfants récupérés par requête (avant fusion)
+RRF_K = 60  # constante de la Reciprocal Rank Fusion
+FUSION_TOP_N = 15  # parents conservés après fusion (entrée du reranker)
 
 # --- Re-ranking (FlashRank, local) ------------------------------------------
-RERANK_TOP_N = 4                       # documents conservés après reranking
+RERANK_TOP_N = 4  # documents conservés après reranking
 RERANKER_MODEL = "ms-marco-MultiBERT-L-12"  # modèle multilingue (FR ok)
 
 # --- CRAG (Corrective RAG) --------------------------------------------------
@@ -190,6 +190,5 @@ USE_SELF_RAG = True
 
 # --- Réponse de repli (anti-hallucination) ----------------------------------
 FALLBACK_ANSWER = (
-    "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre "
-    "à cette question."
+    "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question."
 )

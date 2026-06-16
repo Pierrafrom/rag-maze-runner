@@ -14,12 +14,14 @@ import logging
 import os
 import time
 import uuid
+from typing import Literal, cast
 
 from langchain_classic.retrievers import ParentDocumentRetriever
 from langchain_classic.storage import LocalFileStore, create_kv_docstore
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.stores import BaseStore
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -53,8 +55,7 @@ class RotatingGeminiEmbeddings(Embeddings):
 
     def __init__(self, api_keys: list[str], model: str) -> None:
         self._clients = [
-            GoogleGenerativeAIEmbeddings(model=model, google_api_key=key)
-            for key in api_keys
+            GoogleGenerativeAIEmbeddings(model=model, google_api_key=key) for key in api_keys
         ]
         self._current = 0
         logger.info("[Embeddings] %d clé(s) API Gemini chargée(s)", len(api_keys))
@@ -69,10 +70,15 @@ class RotatingGeminiEmbeddings(Embeddings):
         )
         self._current = next_idx
 
-    def _call_with_rotation(self, method: str, *args):
+    def _call_with_rotation(
+        self, method: Literal["embed_documents", "embed_query"], *args: list[str] | str
+    ) -> list[list[float]] | list[float]:
         for _ in range(len(self._clients)):
             try:
-                return getattr(self._clients[self._current], method)(*args)
+                return cast(
+                    "list[list[float]] | list[float]",
+                    getattr(self._clients[self._current], method)(*args),
+                )
             except Exception as exc:
                 if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
                     self._rotate()
@@ -85,10 +91,12 @@ class RotatingGeminiEmbeddings(Embeddings):
         )
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._call_with_rotation("embed_documents", texts)
+        result = self._call_with_rotation("embed_documents", texts)
+        return cast("list[list[float]]", result)
 
     def embed_query(self, text: str) -> list[float]:
-        return self._call_with_rotation("embed_query", text)
+        result = self._call_with_rotation("embed_query", text)
+        return cast("list[float]", result)
 
 
 def get_embeddings() -> Embeddings:
@@ -110,7 +118,9 @@ def get_embeddings() -> Embeddings:
                 "Exécutez : uv add langchain-huggingface sentence-transformers"
             ) from exc
         logger.info("[Embeddings] HuggingFace — %s", HF_EMBEDDING_MODEL)
-        return HuggingFaceEmbeddings(model_name=HF_EMBEDDING_MODEL)
+        # Import optionnel non typé (dépendance non installée par défaut) : la
+        # classe respecte bien l'interface Embeddings à l'exécution.
+        return cast("Embeddings", HuggingFaceEmbeddings(model_name=HF_EMBEDDING_MODEL))
 
     # Gemini (par défaut)
     if len(GOOGLE_API_KEYS) > 1:
@@ -149,7 +159,9 @@ def build_vectorstore(
     total_batches = (len(chunks) + batch_size - 1) // batch_size
     logger.info(
         "[Vectorstore] %d chunks → %d batch(s) de %d",
-        len(chunks), total_batches, batch_size,
+        len(chunks),
+        total_batches,
+        batch_size,
     )
 
     vectorstore = Chroma.from_documents(
@@ -162,9 +174,7 @@ def build_vectorstore(
 
     for i in range(batch_size, len(chunks), batch_size):
         batch_num = i // batch_size + 1
-        logger.info(
-            "[Vectorstore] Pause %ds avant batch %d/%d...", pause, batch_num, total_batches
-        )
+        logger.info("[Vectorstore] Pause %ds avant batch %d/%d...", pause, batch_num, total_batches)
         time.sleep(pause)
         vectorstore.add_documents(chunks[i : i + batch_size])
         logger.info("[Vectorstore] Batch %d/%d OK", batch_num, total_batches)
@@ -208,7 +218,7 @@ def get_child_vectorstore(
     )
 
 
-def get_parent_docstore(directory: str = PARENT_DOCSTORE_DIR):
+def get_parent_docstore(directory: str = PARENT_DOCSTORE_DIR) -> BaseStore[str, Document]:
     """Docstore persistant des « parents » (LocalFileStore + (dé)sérialisation).
 
     `create_kv_docstore` enveloppe le stockage d'octets pour y ranger/relire
@@ -231,7 +241,7 @@ def _parent_splitter() -> RecursiveCharacterTextSplitter:
 
 def get_parent_document_retriever(
     child_vectorstore: Chroma | None = None,
-    docstore=None,
+    docstore: BaseStore[str, Document] | None = None,
 ) -> ParentDocumentRetriever:
     """Construit le `ParentDocumentRetriever` (enfants Chroma + parents docstore).
 
@@ -305,7 +315,9 @@ def _add_children_with_retry(
             logger.warning(
                 "[Vectorstore] Quota d'embeddings atteint — nouvelle "
                 "tentative dans %ds (essai %d/%d)",
-                wait_seconds, attempt, max_retries,
+                wait_seconds,
+                attempt,
+                max_retries,
             )
             time.sleep(wait_seconds)
 
@@ -341,7 +353,8 @@ def build_parent_document_index(
     docstore.mset(parent_pairs)
     logger.info(
         "[Ingestion] %d parents stockés, %d enfants à embarquer",
-        len(parent_pairs), len(children),
+        len(parent_pairs),
+        len(children),
     )
 
     # 3. Embedding des enfants par lots throttlés.
@@ -354,11 +367,15 @@ def build_parent_document_index(
         _add_children_with_retry(child_vectorstore, children[i : i + batch_size])
         logger.info(
             "[Ingestion] Lot %d/%d OK (%d/%d enfants)",
-            b, total_batches, min(i + batch_size, total), total,
+            b,
+            total_batches,
+            min(i + batch_size, total),
+            total,
         )
 
     logger.info(
         "[Ingestion] Terminé : %d enfants indexés, %d parents.",
-        child_vectorstore._collection.count(), len(parent_pairs),
+        child_vectorstore._collection.count(),
+        len(parent_pairs),
     )
     return get_parent_document_retriever(child_vectorstore, docstore)

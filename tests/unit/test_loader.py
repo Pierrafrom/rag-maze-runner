@@ -14,14 +14,21 @@ from src.loader import _page_name_from_url, filter_documents, split_documents
 # _page_name_from_url
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
-@pytest.mark.parametrize("url,expected", [
-    ("https://mazerunner.fandom.com/fr/wiki/Thomas", "Thomas"),
-    ("https://mazerunner.fandom.com/fr/wiki/Newt", "Newt"),
-    ("https://mazerunner.fandom.com/fr/wiki/Terre_Br%C3%BBl%C3%A9e", "Terre_Brûlée"),
-    ("https://mazerunner.fandom.com/fr/wiki/L%27%C3%89preuve_(s%C3%A9rie)", "L'Épreuve_(série)"),
-    ("https://mazerunner.fandom.com/fr/wiki/Immunis%C3%A9", "Immunisé"),
-])
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://mazerunner.fandom.com/fr/wiki/Thomas", "Thomas"),
+        ("https://mazerunner.fandom.com/fr/wiki/Newt", "Newt"),
+        ("https://mazerunner.fandom.com/fr/wiki/Terre_Br%C3%BBl%C3%A9e", "Terre_Brûlée"),
+        (
+            "https://mazerunner.fandom.com/fr/wiki/L%27%C3%89preuve_(s%C3%A9rie)",
+            "L'Épreuve_(série)",
+        ),
+        ("https://mazerunner.fandom.com/fr/wiki/Immunis%C3%A9", "Immunisé"),
+    ],
+)
 def test_page_name_from_url(url: str, expected: str) -> None:
     """Les noms de pages doivent être décodés correctement depuis les URLs."""
     assert _page_name_from_url(url) == expected
@@ -35,6 +42,7 @@ def test_page_name_from_url_simple() -> None:
 # ---------------------------------------------------------------------------
 # filter_documents
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_filter_documents_removes_short(sample_documents: list[Document]) -> None:
@@ -57,12 +65,15 @@ def test_filter_documents_empty_list() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("min_chars,expected_count", [
-    (0, 3),    # tout passe
-    (600, 2),  # Braise (5 chars) filtré
-    (1000, 1), # seul Newt (2000 chars) passe
-    (9999, 0), # tout filtré
-])
+@pytest.mark.parametrize(
+    "min_chars,expected_count",
+    [
+        (0, 3),  # tout passe
+        (600, 2),  # Braise (5 chars) filtré
+        (1000, 1),  # seul Newt (2000 chars) passe
+        (9999, 0),  # tout filtré
+    ],
+)
 def test_filter_documents_parametrized(
     sample_documents: list[Document],
     min_chars: int,
@@ -74,6 +85,7 @@ def test_filter_documents_parametrized(
 # ---------------------------------------------------------------------------
 # split_documents
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_split_documents_produces_chunks(sample_document: Document) -> None:

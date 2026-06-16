@@ -15,6 +15,7 @@ from langchain_core.documents import Document
 # Documents factices
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def sample_document() -> Document:
     """Un document wiki factice pour Thomas."""
@@ -68,6 +69,7 @@ def ranked_list_b() -> list[tuple[str, Document]]:
 # ---------------------------------------------------------------------------
 # Mock LLM (évite les appels API Gemini/Groq)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def mock_llm() -> MagicMock:
@@ -141,6 +143,7 @@ def mock_correction_chain() -> MagicMock:
 # Mock embeddings (évite les appels API Gemini pour les embeddings)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def mock_embeddings() -> MagicMock:
     """Embeddings factices qui renvoient des vecteurs de dimension 768."""
@@ -153,6 +156,7 @@ def mock_embeddings() -> MagicMock:
 # ---------------------------------------------------------------------------
 # Patch global get_embeddings (utilisable dans tout test unitaire)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def patch_embeddings(mock_embeddings: MagicMock) -> Generator[MagicMock, None, None]:

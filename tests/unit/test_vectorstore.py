@@ -16,6 +16,7 @@ from src.vectorstore import _split_parent_child, advanced_index_exists
 # _split_parent_child
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_split_parent_child_produces_parents_and_children(
     sample_document: Document,
@@ -96,6 +97,7 @@ def test_split_parent_child_large_document() -> None:
 # ---------------------------------------------------------------------------
 # advanced_index_exists
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_advanced_index_exists_false_when_dirs_missing() -> None:

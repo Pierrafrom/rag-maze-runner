@@ -17,7 +17,7 @@ D'après `Sujet/Consignes pour le Projet.pdf` :
 - [x] **Code reproductible** basé sur le notebook de référence.
 - [x] **Gestion des hallucinations**.
 - [ ] **Évaluation du RAG** (à faire).
-- [ ] **Application Streamlit** (à faire).
+- [x] **Application Streamlit** (`streamlit_app.py`).
 - [ ] **Bonus** : déploiement de l'application.
 
 **Choix du corpus.** Le wiki Fandom FR du Labyrinthe est riche, structuré
@@ -178,6 +178,18 @@ Pour une question hors corpus (« Quelle est la capitale de la France ? »), le
 système renvoie : *« Je ne dispose pas d'informations suffisantes dans le wiki
 pour répondre à cette question. »*
 
+### Application Streamlit
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+Interface chat au-dessus de `RagPipeline` : sidebar pour activer/désactiver
+chaque étape (Multi-Query, Re-Ranking, CRAG, Self-RAG — utile pour comparer
+RAG naïf vs avancé), affichage des statuts CRAG/Self-RAG, des sources et des
+reformulations en option. Le pipeline est mis en cache (`@st.cache_resource`)
+par combinaison d'interrupteurs : pas de reconnexion à l'index à chaque message.
+
 ### Utilisation programmatique
 
 ```python
@@ -250,7 +262,7 @@ Toutes les décisions et modifications sont consignées dans **`suivi.md`**
 
 ## 10. Étapes suivantes (TODO)
 
-- [ ] **Application Streamlit** au-dessus de `RagPipeline`.
+- [x] **Application Streamlit** (`streamlit_app.py`) au-dessus de `RagPipeline`.
 - [ ] **Évaluation du RAG** : jeu de questions/réponses de référence + métriques
   (pertinence des passages, fidélité des réponses, taux de repli correct),
   en comparant les configurations via les interrupteurs `USE_*`.

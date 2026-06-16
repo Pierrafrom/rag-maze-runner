@@ -15,6 +15,7 @@ from src.retrieval import generate_query_variants, reciprocal_rank_fusion
 # reciprocal_rank_fusion
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_rrf_prefers_doc_present_in_both_lists(
     ranked_list_a: list[tuple[str, Document]],
@@ -93,6 +94,7 @@ def test_rrf_k_affects_score_magnitude(k: int) -> None:
 # ---------------------------------------------------------------------------
 # generate_query_variants
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_generate_query_variants_includes_original(

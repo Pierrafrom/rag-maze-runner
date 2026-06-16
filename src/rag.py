@@ -16,6 +16,7 @@ chaque brique — pratique pour l'évaluation comparative.
 """
 
 import logging
+from typing import TypedDict
 
 from langchain_core.documents import Document
 
@@ -56,6 +57,25 @@ from src.vectorstore import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class SourceInfo(TypedDict):
+    """Une source citée dans la réponse (page wiki + score de pertinence)."""
+
+    title: str
+    source: str
+    score: float | None
+
+
+class RagAnswer(TypedDict):
+    """Résultat structuré renvoyé par ``RagPipeline.answer``."""
+
+    answer: str
+    grounded: bool
+    crag_status: str
+    sources: list[SourceInfo]
+    queries: list[str]
+    self_rag: str
 
 
 class RagPipeline:
@@ -101,8 +121,8 @@ class RagPipeline:
             logger.debug(message)
 
     @staticmethod
-    def _sources(docs: list[Document]) -> list[dict]:
-        sources = []
+    def _sources(docs: list[Document]) -> list[SourceInfo]:
+        sources: list[SourceInfo] = []
         for doc in docs:
             score = doc.metadata.get("relevance_score")
             sources.append(
@@ -114,7 +134,7 @@ class RagPipeline:
             )
         return sources
 
-    def _fallback(self, crag_status: str, queries: list[str]) -> dict:
+    def _fallback(self, crag_status: str, queries: list[str]) -> RagAnswer:
         return {
             "answer": FALLBACK_ANSWER,
             "grounded": False,
@@ -126,9 +146,7 @@ class RagPipeline:
 
     # -- étapes -------------------------------------------------------------
     def _grade_crag(self, question: str, context: str) -> str:
-        verdict = self.crag_chain.invoke(
-            {"question": question, "context": context}
-        ).strip().upper()
+        verdict = self.crag_chain.invoke({"question": question, "context": context}).strip().upper()
         for status in (CRAG_IRRELEVANT, CRAG_AMBIGUOUS, CRAG_RELEVANT):
             if status in verdict:
                 return status
@@ -170,18 +188,15 @@ class RagPipeline:
         return answer, "OK"
 
     # -- point d'entrée -----------------------------------------------------
-    def answer(self, question: str) -> dict:
+    def answer(self, question: str) -> RagAnswer:
         """Répond à une question via le pipeline RAG avancé complet."""
         self._log(f"\n=== Question : {question} ===")
 
         # 1. Multi-Query ----------------------------------------------------
         if self.use_multiquery:
-            queries = generate_query_variants(
-                question, self.multiquery_chain, NUM_QUERIES
-            )
+            queries = generate_query_variants(question, self.multiquery_chain, NUM_QUERIES)
             self._log(
-                f"[Multi-Query] {len(queries) - 1} variante(s) générée(s) "
-                f"(+ question originale)"
+                f"[Multi-Query] {len(queries) - 1} variante(s) générée(s) (+ question originale)"
             )
         else:
             queries = [question]
@@ -205,10 +220,7 @@ class RagPipeline:
         # 3. Re-Ranking -----------------------------------------------------
         if self.use_rerank:
             top_docs = rerank_documents(question, candidates, RERANK_TOP_N)
-            self._log(
-                f"[Re-Ranking] top {len(top_docs)}/{len(candidates)} retenus "
-                f"(FlashRank)"
-            )
+            self._log(f"[Re-Ranking] top {len(top_docs)}/{len(candidates)} retenus (FlashRank)")
         else:
             top_docs = candidates[:RERANK_TOP_N]
 
@@ -228,9 +240,7 @@ class RagPipeline:
                 context = CRAG_INSUFFICIENT_NOTICE + context
 
         # 5. Génération -----------------------------------------------------
-        answer = self.generation_chain.invoke(
-            {"context": context, "question": question}
-        )
+        answer = self.generation_chain.invoke({"context": context, "question": question})
         self._log("[Génération] réponse produite")
 
         # 6. Self-RAG -------------------------------------------------------
@@ -253,7 +263,7 @@ class RagPipeline:
 _pipeline_ref: list[RagPipeline] = []
 
 
-def answer_question(question: str) -> dict:
+def answer_question(question: str) -> RagAnswer:
     """Répond à une question via un ``RagPipeline`` partagé (instancié à la demande)."""
     if not _pipeline_ref:
         _pipeline_ref.append(RagPipeline())

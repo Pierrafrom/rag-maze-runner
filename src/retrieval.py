@@ -17,7 +17,9 @@ import logging
 from functools import lru_cache
 
 from langchain_community.document_compressors import FlashrankRerank
+from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
+from langchain_core.stores import BaseStore
 
 from src.config import (
     CHILD_SEARCH_K,
@@ -27,6 +29,7 @@ from src.config import (
     RERANKER_MODEL,
     RRF_K,
 )
+from src.generator import StrChain
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,7 @@ logger = logging.getLogger(__name__)
 # 1. Multi-Query
 # ---------------------------------------------------------------------------
 def generate_query_variants(
-    question: str, multiquery_chain, num_queries: int = NUM_QUERIES
+    question: str, multiquery_chain: StrChain, num_queries: int = NUM_QUERIES
 ) -> list[str]:
     """Génère ``num_queries`` reformulations et renvoie [original, *variantes].
 
@@ -50,9 +53,7 @@ def generate_query_variants(
         (dédupliquées, sans lignes vides).
     """
     logger.info("[Multi-Query] Génération de %d variante(s) pour : %s", num_queries, question)
-    raw = multiquery_chain.invoke(
-        {"question": question, "num_queries": num_queries}
-    )
+    raw = multiquery_chain.invoke({"question": question, "num_queries": num_queries})
     variants = [line.strip(" -•\t") for line in raw.splitlines() if line.strip()]
 
     queries = [question]
@@ -69,7 +70,10 @@ def generate_query_variants(
 # 2. Recherche par requête + RAG-Fusion (RRF)
 # ---------------------------------------------------------------------------
 def search_parents_for_query(
-    query: str, child_vectorstore, docstore, k: int = CHILD_SEARCH_K
+    query: str,
+    child_vectorstore: Chroma,
+    docstore: BaseStore[str, Document],
+    k: int = CHILD_SEARCH_K,
 ) -> list[tuple[str, Document]]:
     """Recherche les enfants les plus proches et remonte aux parents (dédupliqués).
 
@@ -90,9 +94,7 @@ def search_parents_for_query(
 
     parents = docstore.mget(ordered_ids)
     return [
-        (pid, pdoc)
-        for pid, pdoc in zip(ordered_ids, parents, strict=False)
-        if pdoc is not None
+        (pid, pdoc) for pid, pdoc in zip(ordered_ids, parents, strict=False) if pdoc is not None
     ]
 
 
@@ -127,18 +129,15 @@ def reciprocal_rank_fusion(
 
 def fusion_retrieve(
     queries: list[str],
-    child_vectorstore,
-    docstore,
+    child_vectorstore: Chroma,
+    docstore: BaseStore[str, Document],
     k: int = CHILD_SEARCH_K,
     rrf_k: int = RRF_K,
     top_n: int = FUSION_TOP_N,
 ) -> list[tuple[Document, float]]:
     """Exécute la recherche pour chaque requête puis fusionne par RRF."""
     logger.info("[RAG-Fusion] %d requête(s) → recherche vectorielle (k=%d)...", len(queries), k)
-    ranked_lists = [
-        search_parents_for_query(q, child_vectorstore, docstore, k=k)
-        for q in queries
-    ]
+    ranked_lists = [search_parents_for_query(q, child_vectorstore, docstore, k=k) for q in queries]
     result = reciprocal_rank_fusion(ranked_lists, k=rrf_k, top_n=top_n)
     logger.info("[RAG-Fusion] %d parents après RRF (top_n=%d)", len(result), top_n)
     return result
@@ -150,7 +149,10 @@ def fusion_retrieve(
 @lru_cache(maxsize=1)
 def get_reranker(top_n: int = RERANK_TOP_N) -> FlashrankRerank:
     """Instancie (et met en cache) le reranker FlashRank multilingue."""
-    return FlashrankRerank(model=RERANKER_MODEL, top_n=top_n)
+    # `client` est construit dynamiquement par un validateur pydantic de
+    # FlashrankRerank si absent ; le champ est pourtant déclaré obligatoire
+    # dans le modèle, d'où l'ignore ciblé.
+    return FlashrankRerank(model=RERANKER_MODEL, top_n=top_n)  # type: ignore[call-arg]
 
 
 def rerank_documents(

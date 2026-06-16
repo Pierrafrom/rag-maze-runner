@@ -19,6 +19,57 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-16 — Application Streamlit + typage 100 % mypy strict
+
+**Quoi** : `streamlit_app.py` *(nouveau)*, `src/rag.py`, `src/generator.py`,
+`src/retrieval.py`, `src/vectorstore.py`, `pyproject.toml`, `README.md`,
+`CLAUDE.md`
+
+- **`streamlit_app.py`** : interface chat (`st.chat_input`/`st.chat_message`)
+  au-dessus de `RagPipeline`. Sidebar avec interrupteurs Multi-Query/
+  Re-Ranking/CRAG/Self-RAG (évaluation comparative en direct), affichage des
+  statuts CRAG/Self-RAG, sources en `st.expander`, reformulations en option.
+  Pipeline mis en cache via `@st.cache_resource` (clé = combinaison des 4
+  interrupteurs) pour ne jamais rouvrir l'index à chaque message.
+  Réécrit **from scratch** plutôt que repris du `app.py` trouvé sur la branche
+  `main` (historique git indépendant de `test`, sans ancêtre commun) : ce
+  dernier dupliquait une logique RAG naïve avec Ollama, sans réutiliser notre
+  pipeline avancé (Multi-Query/RAG-Fusion/Re-Ranking/CRAG/Self-RAG) — repartir
+  de `RagPipeline` était plus cohérent que d'adapter du code incompatible.
+- **`src/rag.py`** : ajout des `TypedDict` `SourceInfo` et `RagAnswer` —
+  remplace les `dict` non paramétrés en retour de `RagPipeline.answer`,
+  `_fallback`, `_sources`, `answer_question`.
+- **Typage 100 % mypy strict (0 erreur sur `src/`)** :
+  - `pyproject.toml` : ajout de `plugins = ["pydantic.mypy"]` (sans ce plugin,
+    mypy ne reconnaît pas les champs pydantic des classes LangChain comme
+    kwargs valides du `__init__` — ex. `GoogleGenerativeAIEmbeddings(google_api_key=...)`).
+  - `src/generator.py` : type alias `StrChain = Runnable[dict[str, Any], str]`
+    appliqué à `get_llm`, `format_docs`, toutes les `build_*_chain`,
+    `build_rag_chain`. Correctif `ChatGroq(model_name=...)` (le champ pydantic
+    réel est `model_name`, alias `model` non reconnu par le plugin mypy).
+  - `src/retrieval.py` : signatures `Chroma`/`BaseStore[str, Document]`/
+    `StrChain` explicites. `FlashrankRerank(...)` marqué
+    `# type: ignore[call-arg]` (le champ `client` est déclaré obligatoire
+    mais construit dynamiquement par un validateur pydantic `mode="before"`).
+  - `src/vectorstore.py` : `_call_with_rotation` retype en
+    `list[list[float]] | list[float]` (+ `cast` ciblés dans `embed_documents`/
+    `embed_query`) au lieu d'un retour `Any` implicite ; `get_parent_docstore`
+    et `get_parent_document_retriever` typés avec `BaseStore[str, Document]`.
+
+**Pourquoi** : le sujet exige une application Streamlit ; la version trouvée
+sur `main` n'était pas réutilisable sans régresser sur les anti-hallucinations
+(CRAG/Self-RAG absents de cette version). Le typage strict était l'objectif
+explicite de la session précédente (tooling mypy/ruff/pytest) — il restait
+26 erreurs mypy non résolues qu'il fallait traiter avant de considérer le
+code « 100 % typé ».
+
+**Validation** : `uv run mypy src/ streamlit_app.py` → 0 erreur.
+`uv run ruff check` → clean. `uv run pytest -m unit` → 45/45.
+`uv run streamlit run streamlit_app.py` démarre sans exception (HTTP 200) ;
+le flux question→réponse complet n'a **pas** pu être testé dans un navigateur
+faute de clé API (`.env` absent dans cet environnement) — à vérifier par un
+membre de l'équipe disposant d'une clé Gemini valide.
+
 ### 2026-06-13 — Flag --force pour reconstruction de l'index dans ingest.py
 
 **Quoi** : `ingest.py`
