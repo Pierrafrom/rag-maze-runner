@@ -1,0 +1,84 @@
+# Stack RAG Maze Runner : Streamlit + Ollama (LLM local).
+#
+# Lancement :
+#   docker compose up --build
+#   → http://localhost:8501
+#
+# Premier démarrage (tirer les modèles locaux, une seule fois) :
+#   docker compose --profile bootstrap up ollama-init
+#   (ou : docker compose exec ollama ollama pull mistral)
+#
+# Modes :
+#   - LLM local (par défaut)  : LLM_PROVIDER=ollama dans .env, aucun quota.
+#   - Embeddings 100 % offline : EMBEDDING_PROVIDER=ollama + index reconstruit
+#     (docker compose run --rm rag-app uv run python ingest.py).
+#   - Embeddings Gemini (défaut): GOOGLE_API_KEY dans .env, index déjà fourni.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: maze-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # GPU NVIDIA (optionnel) : décommenter si nvidia-container-toolkit est installé.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Service one-shot : tire les modèles locaux. Profil "bootstrap" → ne tourne
+  # pas au `up` normal. Lancer : docker compose --profile bootstrap up ollama-init
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: maze-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "ollama pull mistral && ollama pull nomic-embed-text"
+    profiles:
+      - bootstrap
+
+  rag-app:
+    build: .
+    container_name: maze-rag-app
+    ports:
+      - "8501:8501"
+    env_file:
+      # Optionnel : en mode 100 % local (Ollama), aucune clé n'est requise.
+      - path: .env
+        required: false
+    environment:
+      # Pointe vers le service Ollama du réseau compose (override du localhost).
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      # Index montés en lecture seule (jamais dans l'image). Le dossier utilisé
+      # dépend de EMBEDDING_PROVIDER (gemini → _gemini, ollama → _ollama).
+      - ./chroma_children_gemini:/app/chroma_children_gemini
+      - ./chroma_children_ollama:/app/chroma_children_ollama
+      - ./parent_docstore:/app/parent_docstore
+      # Cache du modèle de re-ranking FlashRank (évite un re-téléchargement).
+      - flashrank_cache:/root/.cache
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  flashrank_cache:

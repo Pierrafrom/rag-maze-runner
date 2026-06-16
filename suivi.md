@@ -19,6 +19,171 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-16 — Recherche hybride BM25 + RRF (axe 8) + interrupteur d'ablation
+
+**Quoi** : `src/retrieval.py`, `src/config.py`, `src/rag.py`, `streamlit_app.py`,
+`tests/evaluation/run_eval.py`, `tests/unit/test_retrieval.py`, `pyproject.toml`.
+
+- **BM25 lexical fusionné à la RRF** : `bm25_rank_parents()` applique BM25
+  (backend `rank-bm25`) sur les **chunks enfants** (tokenizer FR
+  minuscules/alphanum, `_tokenize_fr`), puis remonte aux parents (dédup), comme
+  la voie dense. Le classement lexical est **injecté comme liste supplémentaire**
+  dans la RRF existante de `fusion_retrieve` (flag `use_hybrid`). Index BM25 mis
+  en cache par base d'enfants. Config : `USE_HYBRID=True`, `BM25_K=10`.
+- **Choix BM25 sur enfants (et non parents)** : les parents (~1500 car.) diluent
+  les termes ; les enfants (~250 car.) sont plus discriminants, et la remontée
+  enfant→parent réutilise le pattern parent-document.
+- **Interrupteur d'ablation** : `RagPipeline(use_hybrid)`, checkbox Streamlit,
+  `run_eval --no-hybrid` → on peut **mesurer** dense seul vs hybride.
+- **Tests** : 4 tests `bm25_rank_parents` (faux child-vectorstore + `InMemoryStore`,
+  hors réseau) : appariement nom propre, insensibilité à la casse, remontée
+  enfant→parent, base vide. Total **63 → 67 tests**, mypy strict 0 erreur, ruff clean.
+
+**Pourquoi & honnêteté sur le gain** : le corpus est dense en noms propres, mais
+un *smoke test* sur l'index réel (1260 enfants) montre que BM25 **seul** est
+**bruité ici** : les concepts clés (Braise, WICKED, Griffeur) sont **ubiquitaires**
+(cités sur presque toutes les pages perso) donc peu discriminants lexicalement,
+et les pages longues (beaucoup d'enfants) sont sur-représentées (« Newt » remonte
+souvent en tête). BM25 reste néanmoins un **second signal de rappel** fusionné à
+la voie dense, et le Re-Ranking final (FlashRank) filtre le top 15 → 4.
+⚠️ **À mesurer avant de figer le défaut** : lancer `run_eval` avec puis sans
+`--no-hybrid` (idéalement en `--provider ollama`, hors quota) et comparer
+couverture mots-clés / accord CRAG. Si l'hybride n'apporte rien sur ce corpus,
+basculer `USE_HYBRID=False`. La décision est désormais **outillée** (ablation +
+métriques), conformément à la démarche d'évaluation (axe 6).
+
+### 2026-06-16 — Dockerisation (compose Streamlit + Ollama) + index paramétré par provider (axe 11)
+
+**Quoi** : `Dockerfile` *(nouveau)*, `docker-compose.yml` *(nouveau)*,
+`.dockerignore` *(nouveau)*, `src/config.py`, `src/vectorstore.py`,
+`README.md`, `.env.example` ; `chroma_children/` → `chroma_children_gemini/`
+*(git mv)*.
+
+- **Index paramétré par provider d'embedding** : `CHILD_CHROMA_DIR =
+  f"./chroma_children_{EMBEDDING_PROVIDER}"`. L'index Gemini existant est
+  renommé `chroma_children_gemini/` (git mv, données préservées) ; un futur
+  index local ira dans `chroma_children_ollama/`. Le `parent_docstore/`
+  (texte brut, indépendant du provider) reste **partagé**. On peut ainsi
+  conserver l'index cloud ET un index offline sans que l'un écrase l'autre.
+- **Embeddings Ollama** : `get_embeddings()` gère `EMBEDDING_PROVIDER=ollama`
+  (`OllamaEmbeddings(nomic-embed-text)`) → retrieval 100 % local possible.
+- **Dockerfile** : image Streamlit `python:3.11-slim` + uv (couche deps mise en
+  cache séparément du code). **LLM (Ollama) et index restent hors de l'image**
+  (service séparé + volumes) → image légère, livraison reproductible.
+- **docker-compose.yml** : 2 services (`ollama` officiel + `rag-app`) avec
+  `healthcheck`, volumes (`ollama_data`, index montés, cache FlashRank),
+  `OLLAMA_BASE_URL=http://ollama:11434`. Service one-shot `ollama-init`
+  (profil `bootstrap`) pour tirer les modèles. `env_file` marqué
+  `required: false` → `docker compose` ne casse pas en l'absence de `.env`
+  (mode local sans clé). Bloc GPU NVIDIA commenté (optionnel, WSL). Validé via
+  `docker compose config`.
+- **README** : tableau des 3 modes (A API Gemini / B LLM local / C 100 % offline)
+  + mode Docker, avec les commandes exactes.
+
+**Pourquoi** : portabilité « clone → `docker compose up` ». Décisions :
+- **LLM/index hors image** : éviter une image de plusieurs Go (modèles) et
+  garder l'index versionné modifiable sans rebuild.
+- **Garder Gemini + local en parallèle** (choix utilisateur) plutôt que de
+  basculer tout en local : la réindexation locale est rapide (pas de pauses
+  anti-quota), mais conserver l'index Gemini préserve la version « qualité
+  cloud » pour la démo. Le paramétrage par dossier rend la bascule triviale
+  (`EMBEDDING_PROVIDER`), sans migration ni perte.
+
+### 2026-06-16 — LLM locaux (Ollama) sélectionnables + évaluation hors quota (axes 9/10)
+
+**Quoi** : `src/config.py`, `src/generator.py`, `src/rag.py`, `streamlit_app.py`,
+`tests/evaluation/run_eval.py`, `tests/evaluation/run_ragas.py`,
+`tests/unit/test_generator.py` *(nouveau)*, `pyproject.toml`, `.env.example`.
+
+- **Provider Ollama** : `LLM_PROVIDER=ollama` ajouté. `config.py` :
+  `OLLAMA_MODEL` (défaut `mistral`), `OLLAMA_BASE_URL`, `OLLAMA_EMBED_MODEL`
+  (`nomic-embed-text`), `LOCAL_MODELS` (liste du sélecteur, surchargée par env).
+  `generator.get_llm(model, temperature, provider)` : nouveau paramètre
+  `provider` (override à l'exécution) + branche `ChatOllama` (import paresseux,
+  `ImportError` explicite si `langchain-ollama` absent).
+- **Threading provider/modèle** : `build_*_chain(provider, model)` et
+  `RagPipeline(..., provider, model)` propagent le choix à toutes les chaînes
+  (génération, multi-query, CRAG, Self-RAG, correction). Choix d'API : passer
+  `provider/model` aux *builders* (et non des instances LLM partagées) — garde
+  les tests `RagPipeline` inchangés (ils patchent déjà `build_*`) et évite à
+  `rag.py` d'appeler `get_llm` directement.
+- **Streamlit (axe 10)** : sélecteur de modèle en sidebar
+  (`_model_choices()` → Gemini/Groq affichés si clé présente, modèles locaux
+  toujours listés). Cache `@st.cache_resource` désormais clé sur
+  `(provider, model, 4 interrupteurs)`. Gestion d'erreur : `ImportError`
+  (paquet manquant) et toute exception de génération (Ollama éteint) →
+  message clair avec rappel `ollama serve` / `ollama pull`, **pas de crash**.
+  Suppression de `_missing_api_key` (remplacé par le filtrage des choix).
+- **Évaluation hors quota (axe 9 × 6)** : `run_eval`/`run_ragas` reçoivent
+  `--provider {gemini,groq,ollama}` et `--model`, passés à `RagPipeline`. Le
+  **juge RAGAS** utilise `get_llm(provider=...)` et, en mode `ollama`, des
+  embeddings **`OllamaEmbeddings`** locaux → évaluation 100 % locale.
+
+**Pourquoi** : le quota Gemini free tier (génération + juge RAGAS) était le
+point bloquant pour une évaluation répétée. Déporter tous les appels LLM sur
+Ollama supprime ce coût.
+- **Nuance importante documentée** : les *embeddings de requête* du retrieval
+  restent Gemini car l'index `chroma_children/` a été **construit avec Gemini**
+  (provider+modèle d'embedding doivent être identiques entre indexation et
+  requête). Passer à des embeddings locaux pour le retrieval imposerait de
+  reconstruire l'index — hors périmètre. Donc en `--provider ollama` : LLM 100 %
+  local, seuls subsistent ~4 embeddings de requête Gemini par question (quota
+  *embeddings* séparé et léger, avec rotation de clés sur 429).
+- **Modèles recommandés** : `mistral` (7B, ~4.4 Go) et `gemma3:4b` (~3.3 Go)
+  pour la démo ; `llama3.1:8b` conseillé comme **juge** RAGAS (plus robuste).
+- **Tests** : `test_generator.py` (3) verrouille le routage de provider
+  (Ollama, défaut, fallback) hors-ligne. Total **60 → 63 tests**, mypy strict
+  0 erreur, ruff clean. `langchain-ollama` ajouté en dépendance prod +
+  override mypy `langchain_ollama.*`.
+
+### 2026-06-16 — Évaluation du RAG (axe 6) : jeu de référence + RAGAS porté sur `RagPipeline`
+
+**Quoi** : `tests/evaluation/` *(nouveau)* — `eval_dataset.json`, `dataset.py`,
+`run_eval.py`, `run_ragas.py`, `__init__.py`, `results/.gitignore` ;
+`tests/unit/test_rag.py` *(nouveau)*, `tests/unit/test_eval_dataset.py` *(nouveau)* ;
+`src/rag.py`, `pyproject.toml`.
+
+- **`src/rag.py`** : ajout du champ `contexts: list[str]` au `TypedDict`
+  `RagAnswer` (page_content des documents rerankés réellement fournis au
+  générateur ; `[]` en repli). Prérequis indispensable à RAGAS, qui exige
+  `retrieved_contexts` — jusqu'ici seules les métadonnées `sources`
+  (titre/url/score) étaient exposées, pas le texte du contexte.
+- **`eval_dataset.json`** : 24 questions FR de référence (19 du domaine avec
+  `reference` + `expected_keywords` + `expected_crag_status=PERTINENT`, 5
+  hors-sujet `should_answer=false` / `HORS-SUJET`). Étend la PoC de 4 questions.
+- **`run_eval.py`** (évaluation comportementale, **sans juge LLM**) : exécute le
+  *vrai* `RagPipeline` et mesure taux de repli correct, exactitude de décision
+  réponse/repli, accord CRAG, couverture des mots-clés et latence. Résultats
+  versionnés (`results/*_latest.json`). Interrupteurs `--no-multiquery/--no-rerank/
+  --no-crag/--no-self-rag` pour les études d'ablation (axe 8).
+- **`run_ragas.py`** (les 4 métriques de l'énoncé : Faithfulness,
+  ResponseRelevancy, LLMContextPrecisionWithReference, LLMContextRecall) :
+  **portage** de la PoC trouvée sur `origin/main` (cellules 27-34 de `rag.ipynb`).
+
+**Pourquoi** : la PoC RAGAS existante (a) vivait uniquement dans un notebook sur
+`origin/main` (historique git indépendant — absente de notre branche), (b)
+évaluait une chaîne *naïve* Ollama (sans RAG-Fusion/Re-Ranking/CRAG/Self-RAG),
+donc ses scores (`faithfulness=0.45`…) ne disaient rien de notre pipeline, et
+(c) dépendait d'un juge `llama3.1:8b` non reproductible chez nous.
+Décisions du portage :
+- **Juge = `get_llm()` + embeddings = `get_embeddings()`** (Gemini/Groq, nos
+  providers existants) au lieu d'Ollama → reproductible sans dépendance serveur
+  locale supplémentaire.
+- **Évaluation du contexte réellement généré** (`RagAnswer["contexts"]`) plutôt
+  qu'un retriever séparé → la fidélité/précision mesurent bien *notre* pipeline.
+- **RAGAS = dépendance optionnelle** (groupe `eval`, `uv sync --group eval`)
+  car lourde ; import paresseux sous `try/except` avec message clair si absente,
+  + shim `ChatVertexAI` pour contourner un import cassé de certaines versions
+  RAGAS. `override` mypy `ragas.*` ajouté.
+- **Deux niveaux** : `run_eval` (bon marché, déterministe, mesure le repli
+  anti-hallucination sans quota juge) complète `run_ragas` (qualité fine mais
+  coûteuse en quota). `--limit` sur les deux pour les essais.
+- **Tests** : `test_rag.py` (9 tests `RagPipeline` mockés — combinaisons CRAG
+  PERTINENT/AMBIGU/HORS-SUJET, repli sans génération, correction Self-RAG,
+  exposition `contexts`) comble le trou « aucun test sur l'orchestrateur » ;
+  `test_eval_dataset.py` (6 tests) garantit l'intégrité du jeu sans réseau.
+  Total **45 → 60 tests unitaires**, mypy strict 0 erreur, ruff clean.
+
 ### 2026-06-16 — Application Streamlit + typage 100 % mypy strict
 
 **Quoi** : `streamlit_app.py` *(nouveau)*, `src/rag.py`, `src/generator.py`,

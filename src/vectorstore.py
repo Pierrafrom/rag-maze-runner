@@ -38,6 +38,8 @@ from src.config import (
     EMBEDDING_PROVIDER,
     GOOGLE_API_KEYS,
     HF_EMBEDDING_MODEL,
+    OLLAMA_BASE_URL,
+    OLLAMA_EMBED_MODEL,
     PARENT_CHUNK_OVERLAP,
     PARENT_CHUNK_SIZE,
     PARENT_DOCSTORE_DIR,
@@ -121,6 +123,12 @@ def get_embeddings() -> Embeddings:
         # Import optionnel non typé (dépendance non installée par défaut) : la
         # classe respecte bien l'interface Embeddings à l'exécution.
         return cast("Embeddings", HuggingFaceEmbeddings(model_name=HF_EMBEDDING_MODEL))
+
+    if EMBEDDING_PROVIDER == "ollama":
+        from langchain_ollama import OllamaEmbeddings  # noqa: PLC0415
+
+        logger.info("[Embeddings] Ollama (local) — %s", OLLAMA_EMBED_MODEL)
+        return OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
 
     # Gemini (par défaut)
     if len(GOOGLE_API_KEYS) > 1:

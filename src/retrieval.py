@@ -14,24 +14,41 @@ de l'orchestration (qui vit dans ``src/rag.py``) :
 """
 
 import logging
+import re
 from functools import lru_cache
 
 from langchain_community.document_compressors import FlashrankRerank
+from langchain_community.retrievers import BM25Retriever
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.stores import BaseStore
 
 from src.config import (
+    BM25_K,
     CHILD_SEARCH_K,
     FUSION_TOP_N,
     NUM_QUERIES,
     RERANK_TOP_N,
     RERANKER_MODEL,
     RRF_K,
+    USE_HYBRID,
 )
 from src.generator import StrChain
 
 logger = logging.getLogger(__name__)
+
+# Cache des index BM25 par base d'enfants (id) : construit une fois, réutilisé
+# pour toutes les questions d'une même session (évite de re-tokeniser le corpus).
+_bm25_cache: dict[int, BM25Retriever] = {}
+
+
+def _tokenize_fr(text: str) -> list[str]:
+    """Tokenizer lexical simple pour le français : minuscules + mots alphanum.
+
+    Insensible à la casse et à la ponctuation, ce qui aide BM25 à apparier les
+    noms propres du corpus (« WICKED », « Griffeur », « Braise »…).
+    """
+    return re.findall(r"\w+", text.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +144,74 @@ def reciprocal_rank_fusion(
     return [(doc_by_id[pid], score) for pid, score in ordered]
 
 
+def _load_all_children(child_vectorstore: Chroma) -> list[Document]:
+    """Charge tous les chunks « enfants » de Chroma (texte + métadonnées).
+
+    Les enfants portent ``metadata['doc_id']`` (l'identifiant de leur parent),
+    ce qui permet la même remontée enfant→parent que la recherche dense.
+    """
+    raw = child_vectorstore._collection.get(include=["documents", "metadatas"])
+    documents = raw.get("documents") or []
+    metadatas = raw.get("metadatas") or []
+    return [
+        Document(page_content=text, metadata=meta or {})
+        for text, meta in zip(documents, metadatas, strict=False)
+        if text
+    ]
+
+
+def bm25_rank_parents(
+    query: str,
+    child_vectorstore: Chroma,
+    docstore: BaseStore[str, Document],
+    k: int = BM25_K,
+) -> list[tuple[str, Document]]:
+    """Classe les parents par pertinence lexicale BM25, via les enfants.
+
+    BM25 est appliqué sur les petits chunks « enfants » (plus précis que les
+    parents pour les noms propres), puis les enfants sont remontés à leurs
+    parents (dédupliqués), comme dans la recherche dense. L'index BM25 est
+    construit une fois par base d'enfants puis mis en cache.
+
+    Args:
+        query: la requête lexicale (typiquement la question d'origine).
+        child_vectorstore: base Chroma des enfants.
+        docstore: docstore des parents (remontée enfant→parent).
+        k: nombre de parents conservés.
+
+    Returns:
+        Liste ordonnée ``(parent_id, parent_document)`` (du plus pertinent au
+        moins pertinent), vide si la base d'enfants est vide.
+    """
+    retriever = _bm25_cache.get(id(child_vectorstore))
+    if retriever is None:
+        children = _load_all_children(child_vectorstore)
+        if not children:
+            return []
+        retriever = BM25Retriever.from_documents(children, preprocess_func=_tokenize_fr)
+        _bm25_cache[id(child_vectorstore)] = retriever
+
+    # On récupère plus d'enfants que k pour pouvoir dédupliquer vers k parents.
+    retriever.k = max(k * 4, 20)
+    hits = retriever.invoke(query)
+
+    ordered_ids: list[str] = []
+    seen: set[str] = set()
+    for child in hits:
+        parent_id = child.metadata.get("doc_id")
+        if parent_id is None or parent_id in seen:
+            continue
+        seen.add(parent_id)
+        ordered_ids.append(parent_id)
+        if len(ordered_ids) >= k:
+            break
+
+    parents = docstore.mget(ordered_ids)
+    return [
+        (pid, pdoc) for pid, pdoc in zip(ordered_ids, parents, strict=False) if pdoc is not None
+    ]
+
+
 def fusion_retrieve(
     queries: list[str],
     child_vectorstore: Chroma,
@@ -134,10 +219,34 @@ def fusion_retrieve(
     k: int = CHILD_SEARCH_K,
     rrf_k: int = RRF_K,
     top_n: int = FUSION_TOP_N,
+    use_hybrid: bool = USE_HYBRID,
+    bm25_k: int = BM25_K,
 ) -> list[tuple[Document, float]]:
-    """Exécute la recherche pour chaque requête puis fusionne par RRF."""
+    """Exécute la recherche par requête, ajoute un classement lexical BM25, fusionne par RRF.
+
+    Args:
+        queries: question d'origine suivie des reformulations Multi-Query.
+        child_vectorstore: base Chroma des enfants (recherche dense).
+        docstore: docstore des parents (remontée + index lexical BM25).
+        k: enfants récupérés par requête dense.
+        rrf_k: constante d'amortissement de la RRF.
+        top_n: parents conservés après fusion.
+        use_hybrid: si vrai, ajoute une liste lexicale BM25 (sur la question
+            d'origine) aux classements denses avant la RRF.
+        bm25_k: nombre de parents récupérés par BM25.
+
+    Returns:
+        Liste ``(document, score_rrf)`` triée par score décroissant, tronquée.
+    """
     logger.info("[RAG-Fusion] %d requête(s) → recherche vectorielle (k=%d)...", len(queries), k)
     ranked_lists = [search_parents_for_query(q, child_vectorstore, docstore, k=k) for q in queries]
+
+    if use_hybrid and queries:
+        lexical = bm25_rank_parents(queries[0], child_vectorstore, docstore, k=bm25_k)
+        if lexical:
+            ranked_lists.append(lexical)
+            logger.info("[RAG-Fusion] + liste lexicale BM25 (%d parents)", len(lexical))
+
     result = reciprocal_rank_fusion(ranked_lists, k=rrf_k, top_n=top_n)
     logger.info("[RAG-Fusion] %d parents après RRF (top_n=%d)", len(result), top_n)
     return result

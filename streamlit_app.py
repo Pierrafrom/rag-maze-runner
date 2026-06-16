@@ -16,7 +16,7 @@ import logging
 
 import streamlit as st
 
-from src.config import GOOGLE_API_KEY, GROQ_API_KEY, LLM_PROVIDER
+from src.config import GOOGLE_API_KEY, GROQ_API_KEY, GROQ_MODEL, LLM_MODEL, LOCAL_MODELS
 from src.logging_config import setup_logging
 from src.rag import RagAnswer, RagPipeline
 
@@ -30,13 +30,42 @@ _CRAG_BADGE = {"PERTINENT": "🟢", "AMBIGU": "🟡", "HORS-SUJET": "🔴"}
 _SELF_RAG_BADGE = {"OK": "🟢", "A_CORRIGER": "🟠"}
 
 
+def _model_choices() -> dict[str, tuple[str, str | None]]:
+    """Construit le menu des modèles disponibles → ``(provider, model)``.
+
+    Les modèles cloud n'apparaissent que si leur clé API est définie ; les
+    modèles locaux (Ollama) sont toujours proposés (l'indisponibilité du serveur
+    est gérée au moment de la réponse).
+    """
+    choices: dict[str, tuple[str, str | None]] = {}
+    if GOOGLE_API_KEY:
+        choices[f"🌐 Gemini ({LLM_MODEL})"] = ("gemini", None)
+    if GROQ_API_KEY:
+        choices[f"🌐 Groq ({GROQ_MODEL})"] = ("groq", None)
+    for model in LOCAL_MODELS:
+        choices[f"💻 {model} (local)"] = ("ollama", model)
+    return choices
+
+
 @st.cache_resource(show_spinner="Connexion à l'index parent-enfant...")
 def load_pipeline(
-    use_multiquery: bool, use_rerank: bool, use_crag: bool, use_self_rag: bool
+    provider: str,
+    model: str | None,
+    use_multiquery: bool,
+    use_rerank: bool,
+    use_crag: bool,
+    use_self_rag: bool,
+    use_hybrid: bool,
 ) -> RagPipeline:
-    """Instancie (et met en cache) le pipeline pour une combinaison d'interrupteurs donnée."""
+    """Instancie (et met en cache) le pipeline pour une configuration donnée.
+
+    La clé de cache inclut le provider/modèle et les 4 interrupteurs : changer
+    de modèle dans la sidebar reconstruit (une fois) le pipeline correspondant.
+    """
     logger.info(
-        "[Streamlit] Instanciation RagPipeline (multiquery=%s, rerank=%s, crag=%s, self_rag=%s)",
+        "[Streamlit] RagPipeline (provider=%s, model=%s, mq=%s, rr=%s, crag=%s, self_rag=%s)",
+        provider,
+        model,
         use_multiquery,
         use_rerank,
         use_crag,
@@ -48,16 +77,10 @@ def load_pipeline(
         use_rerank=use_rerank,
         use_crag=use_crag,
         use_self_rag=use_self_rag,
+        use_hybrid=use_hybrid,
+        provider=provider,
+        model=model,
     )
-
-
-def _missing_api_key() -> str | None:
-    """Renvoie un message d'erreur si la clé API requise par LLM_PROVIDER est absente."""
-    if LLM_PROVIDER == "groq" and not GROQ_API_KEY:
-        return "LLM_PROVIDER=groq mais GROQ_API_KEY n'est pas définie dans .env"
-    if LLM_PROVIDER != "groq" and not GOOGLE_API_KEY:
-        return "GOOGLE_API_KEY n'est pas définie dans .env"
-    return None
 
 
 def _render_meta(result: RagAnswer, show_sources: bool, show_queries: bool) -> None:
@@ -89,16 +112,33 @@ def main() -> None:
         "réponses ancrées sur le wiki Fandom FR, avec gestion des hallucinations."
     )
 
-    error = _missing_api_key()
-    if error:
-        st.error(f"⚠️ {error}")
+    choices = _model_choices()
+    if not choices:
+        st.error(
+            "⚠️ Aucun modèle disponible. Définissez GOOGLE_API_KEY ou GROQ_API_KEY "
+            "dans .env, ou lancez Ollama en local (`ollama serve` + `ollama pull mistral`)."
+        )
         st.stop()
 
     with st.sidebar:
+        st.header("🧠 Modèle")
+        model_label = st.selectbox(
+            "Modèle de génération",
+            options=list(choices),
+            help="🌐 = API distante (quota) · 💻 = local via Ollama (sans quota)",
+        )
+        provider, model = choices[model_label]
+        if provider == "ollama":
+            st.caption("Local : nécessite `ollama serve` + le modèle tiré (`ollama pull`).")
+
         st.header("⚙️ Configuration du pipeline")
-        st.caption(f"Fournisseur LLM actif : **{LLM_PROVIDER}**")
         use_multiquery = st.checkbox(
             "Multi-Query", value=True, help="3 reformulations de la question avant recherche"
+        )
+        use_hybrid = st.checkbox(
+            "Recherche hybride (BM25)",
+            value=True,
+            help="Ajoute un classement lexical BM25 à la fusion (noms propres)",
         )
         use_rerank = st.checkbox(
             "Re-Ranking (FlashRank)", value=True, help="Reclassement sémantique top 15 → top 4"
@@ -118,8 +158,14 @@ def main() -> None:
             st.rerun()
 
     try:
-        pipeline = load_pipeline(use_multiquery, use_rerank, use_crag, use_self_rag)
+        pipeline = load_pipeline(
+            provider, model, use_multiquery, use_rerank, use_crag, use_self_rag, use_hybrid
+        )
     except FileNotFoundError as exc:
+        st.error(f"⚠️ {exc}")
+        st.stop()
+    except ImportError as exc:
+        # ex. provider=ollama mais langchain-ollama absent.
         st.error(f"⚠️ {exc}")
         st.stop()
 
@@ -140,8 +186,19 @@ def main() -> None:
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Recherche en cours..."):
-                result = pipeline.answer(question)
+            try:
+                with st.spinner("Recherche en cours..."):
+                    result = pipeline.answer(question)
+            except Exception as exc:  # on dégrade proprement côté UI
+                logger.exception("[Streamlit] Échec de la réponse (provider=%s)", provider)
+                hint = (
+                    " Vérifiez qu'Ollama tourne (`ollama serve`) et que le modèle "
+                    f"« {model} » est tiré (`ollama pull {model}`)."
+                    if provider == "ollama"
+                    else " Vérifiez votre clé API et votre quota."
+                )
+                st.error(f"⚠️ Impossible de générer la réponse : {exc}.{hint}")
+                st.stop()
             st.markdown(result["answer"])
             _render_meta(result, show_sources, show_queries)
 

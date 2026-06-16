@@ -4,12 +4,15 @@ Couvre : reciprocal_rank_fusion, generate_query_variants.
 Aucun appel réseau ni index Chroma requis.
 """
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.documents import Document
+from langchain_core.stores import InMemoryStore
 
-from src.retrieval import generate_query_variants, reciprocal_rank_fusion
+from src import retrieval
+from src.retrieval import bm25_rank_parents, generate_query_variants, reciprocal_rank_fusion
 
 # ---------------------------------------------------------------------------
 # reciprocal_rank_fusion
@@ -139,3 +142,75 @@ def test_generate_query_variants_empty_lines_ignored(mock_multiquery_chain: Magi
     mock_multiquery_chain.invoke.return_value = "Variante 1\n\n\nVariante 2\n"
     variants = generate_query_variants("Q ?", mock_multiquery_chain, num_queries=3)
     assert all(v.strip() for v in variants)
+
+
+# ---------------------------------------------------------------------------
+# bm25_rank_parents (recherche lexicale hybride)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_bm25_cache() -> Iterator[None]:
+    """Vide le cache BM25 entre les tests (clé = id du docstore, réutilisable)."""
+    retrieval._bm25_cache.clear()
+    yield
+    retrieval._bm25_cache.clear()
+
+
+def _parent_store() -> InMemoryStore:
+    store: InMemoryStore = InMemoryStore()
+    store.mset(
+        [
+            ("p_thomas", Document(page_content="Thomas est un Coureur du Bloc.", metadata={})),
+            ("p_minho", Document(page_content="Minho est le Maton des Coureurs.", metadata={})),
+            ("p_braise", Document(page_content="La Braise est un virus du WICKED.", metadata={})),
+        ]
+    )
+    return store
+
+
+def _child_vectorstore() -> MagicMock:
+    """Fausse base d'enfants : ``_collection.get`` renvoie textes + doc_id parent."""
+    vs = MagicMock()
+    vs._collection.get.return_value = {
+        "documents": [
+            "Thomas est un Coureur du Bloc.",
+            "Minho est le Maton des Coureurs.",
+            "La Braise est un virus du WICKED.",
+        ],
+        "metadatas": [
+            {"doc_id": "p_thomas"},
+            {"doc_id": "p_minho"},
+            {"doc_id": "p_braise"},
+        ],
+    }
+    return vs
+
+
+@pytest.mark.unit
+def test_bm25_ranks_matching_proper_noun_first() -> None:
+    ranked = bm25_rank_parents("Qu'est-ce que la Braise ?", _child_vectorstore(), _parent_store())
+    assert ranked[0][0] == "p_braise"
+
+
+@pytest.mark.unit
+def test_bm25_is_case_insensitive() -> None:
+    # 'WICKED' en minuscules dans la requête doit apparier le parent Braise.
+    ranked = bm25_rank_parents("rôle du wicked", _child_vectorstore(), _parent_store())
+    assert ranked[0][0] == "p_braise"
+
+
+@pytest.mark.unit
+def test_bm25_remonte_enfant_vers_parent() -> None:
+    ranked = bm25_rank_parents("Minho Coureurs", _child_vectorstore(), _parent_store())
+    assert {pid for pid, _ in ranked} <= {"p_thomas", "p_minho", "p_braise"}
+    assert ranked[0][0] == "p_minho"
+    # On renvoie bien les documents PARENTS (issus du docstore).
+    assert ranked[0][1].page_content == "Minho est le Maton des Coureurs."
+
+
+@pytest.mark.unit
+def test_bm25_empty_store_returns_empty() -> None:
+    empty_vs = MagicMock()
+    empty_vs._collection.get.return_value = {"documents": [], "metadatas": []}
+    assert bm25_rank_parents("question", empty_vs, InMemoryStore()) == []

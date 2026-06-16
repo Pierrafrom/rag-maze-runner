@@ -30,6 +30,8 @@ from src.config import (
     LLM_MODEL,
     LLM_PROVIDER,
     LLM_TEMPERATURE,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
 )
 from src.prompts import (
     CORRECTION_PROMPT_TEMPLATE,
@@ -45,20 +47,29 @@ logger = logging.getLogger(__name__)
 StrChain = Runnable[dict[str, Any], str]
 
 
-def get_llm(model: str | None = None, temperature: float = LLM_TEMPERATURE) -> BaseChatModel:
-    """Instancie le LLM actif selon LLM_PROVIDER (Gemini ou Groq).
+def get_llm(
+    model: str | None = None,
+    temperature: float = LLM_TEMPERATURE,
+    provider: str | None = None,
+) -> BaseChatModel:
+    """Instancie le LLM choisi (Gemini, Groq ou Ollama local).
 
     Args:
-        model: nom du modèle (override de LLM_MODEL / GROQ_MODEL si fourni).
+        model: nom du modèle (override de LLM_MODEL / GROQ_MODEL / OLLAMA_MODEL).
         temperature: température de génération.
+        provider: fournisseur à utiliser ("gemini", "groq", "ollama") ;
+            par défaut ``LLM_PROVIDER`` de la config. Permet de surcharger le
+            provider à l'exécution (sélecteur Streamlit, évaluation locale).
 
     Returns:
         Une instance ``BaseChatModel`` compatible LangChain.
 
     Raises:
-        ImportError: si langchain-groq n'est pas installé et LLM_PROVIDER="groq".
+        ImportError: si le paquet du provider demandé n'est pas installé.
     """
-    if LLM_PROVIDER == "groq":
+    provider = provider or LLM_PROVIDER
+
+    if provider == "groq":
         try:
             from langchain_groq import ChatGroq  # noqa: PLC0415
         except ImportError as exc:
@@ -70,6 +81,17 @@ def get_llm(model: str | None = None, temperature: float = LLM_TEMPERATURE) -> B
         return ChatGroq(
             model_name=groq_model, temperature=temperature, api_key=GROQ_API_KEY or None
         )
+
+    if provider == "ollama":
+        try:
+            from langchain_ollama import ChatOllama  # noqa: PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                "langchain-ollama n'est pas installé. Exécutez : uv add langchain-ollama"
+            ) from exc
+        ollama_model = model or OLLAMA_MODEL
+        logger.info("[LLM] Ollama (local) — %s (temp=%.1f)", ollama_model, temperature)
+        return ChatOllama(model=ollama_model, base_url=OLLAMA_BASE_URL, temperature=temperature)
 
     # Gemini (par défaut)
     gemini_model = model or LLM_MODEL
@@ -90,9 +112,9 @@ def format_docs(docs: list[Document]) -> str:
 # ---------------------------------------------------------------------------
 # Génération
 # ---------------------------------------------------------------------------
-def build_generation_chain() -> StrChain:
+def build_generation_chain(provider: str | None = None, model: str | None = None) -> StrChain:
     """Chaîne de génération à contexte fourni : {context, question} → réponse."""
-    return get_qa_prompt() | get_llm() | StrOutputParser()
+    return get_qa_prompt() | get_llm(model=model, provider=provider) | StrOutputParser()
 
 
 def build_rag_chain(retriever: BaseRetriever) -> Runnable[str, str]:
@@ -108,34 +130,36 @@ def build_rag_chain(retriever: BaseRetriever) -> Runnable[str, str]:
 # ---------------------------------------------------------------------------
 # Multi-Query (génération des reformulations)
 # ---------------------------------------------------------------------------
-def build_multiquery_chain() -> StrChain:
+def build_multiquery_chain(provider: str | None = None, model: str | None = None) -> StrChain:
     """Chaîne renvoyant le texte brut des reformulations (une par ligne).
 
     Entrée : ``{"question": str, "num_queries": int}``.
     """
     prompt = PromptTemplate.from_template(MULTIQUERY_PROMPT_TEMPLATE)
-    return prompt | get_llm() | StrOutputParser()
+    return prompt | get_llm(model=model, provider=provider) | StrOutputParser()
 
 
 # ---------------------------------------------------------------------------
 # CRAG (évaluation de la pertinence du contexte)
 # ---------------------------------------------------------------------------
-def build_crag_grader_chain() -> StrChain:
+def build_crag_grader_chain(provider: str | None = None, model: str | None = None) -> StrChain:
     """Chaîne d'évaluation CRAG : {question, context} → statut (un mot)."""
     prompt = PromptTemplate.from_template(CRAG_GRADER_PROMPT_TEMPLATE)
-    return prompt | get_llm(temperature=GRADER_TEMPERATURE) | StrOutputParser()
+    grader = get_llm(model=model, temperature=GRADER_TEMPERATURE, provider=provider)
+    return prompt | grader | StrOutputParser()
 
 
 # ---------------------------------------------------------------------------
 # Self-RAG (auto-évaluation + correction)
 # ---------------------------------------------------------------------------
-def build_selfrag_chain() -> StrChain:
+def build_selfrag_chain(provider: str | None = None, model: str | None = None) -> StrChain:
     """Chaîne d'auto-évaluation : {question, context, answer} → 'OK' | 'A_CORRIGER : …'."""
     prompt = PromptTemplate.from_template(SELFRAG_PROMPT_TEMPLATE)
-    return prompt | get_llm(temperature=GRADER_TEMPERATURE) | StrOutputParser()
+    grader = get_llm(model=model, temperature=GRADER_TEMPERATURE, provider=provider)
+    return prompt | grader | StrOutputParser()
 
 
-def build_correction_chain() -> StrChain:
+def build_correction_chain(provider: str | None = None, model: str | None = None) -> StrChain:
     """Chaîne de correction : {question, context, answer, critique} → réponse corrigée."""
     prompt = PromptTemplate.from_template(CORRECTION_PROMPT_TEMPLATE)
-    return prompt | get_llm() | StrOutputParser()
+    return prompt | get_llm(model=model, provider=provider) | StrOutputParser()

@@ -1,0 +1,197 @@
+{
+  "description": "Jeu d'évaluation de référence du RAG Maze Runner (LO17/AI31 UTC). Questions FR ancrées sur le wiki Fandom indexé. Les questions 'in_domain' attendent une réponse PERTINENTE ; les questions 'out_of_domain' doivent déclencher le repli (HORS-SUJET, should_answer=false). 'reference' sert aux métriques RAGAS (context_recall / precision) ; 'expected_keywords' à l'évaluation comportementale légère.",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "Qui est Thomas dans Le Labyrinthe ?",
+      "reference": "Thomas est le personnage principal de la saga. Il arrive dans le Bloc sans souvenirs, devient rapidement Coureur et joue un rôle central dans l'évasion du Labyrinthe. Il a auparavant travaillé pour le WICKED.",
+      "expected_keywords": ["Bloc", "Coureur", "Labyrinthe", "WICKED"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q02",
+      "question": "Qu'est-ce que la Braise ?",
+      "reference": "La Braise est un virus mortel propagé par le WICKED. Il attaque le cerveau, rend les victimes folles et instables, et les transforme peu à peu en Fondus.",
+      "expected_keywords": ["virus", "WICKED", "Fondu"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q03",
+      "question": "Quel est le rôle de Minho dans le Labyrinthe ?",
+      "reference": "Minho est le Maton des Coureurs dans le Bloc. Il dirige l'exploration du Labyrinthe et en connaît la structure mieux que quiconque.",
+      "expected_keywords": ["Maton", "Coureur", "Labyrinthe"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q04",
+      "question": "Qu'est-ce que le Labyrinthe ?",
+      "reference": "Le Labyrinthe est une immense structure entourant le Bloc, créée par le WICKED. Ses murs se déplacent chaque nuit et il est gardé par les Griffeurs.",
+      "expected_keywords": ["Bloc", "murs", "WICKED", "Griffeur"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q05",
+      "question": "Qui est Newt ?",
+      "reference": "Newt est un personnage clé du Bloc, second d'Alby et ami proche de Thomas. Il aide à maintenir l'ordre parmi les Blocards et soutient le plan d'évasion.",
+      "expected_keywords": ["Bloc", "Alby", "Thomas"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q06",
+      "question": "Qui est Teresa ?",
+      "reference": "Teresa est la seule fille envoyée dans le Bloc. Elle partage un lien et des souvenirs avec Thomas et a, comme lui, travaillé pour le WICKED.",
+      "expected_keywords": ["Bloc", "Thomas", "WICKED"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q07",
+      "question": "Que sont les Griffeurs ?",
+      "reference": "Les Griffeurs sont des créatures mi-organiques mi-mécaniques qui patrouillent le Labyrinthe la nuit. Mortels, ils transmettent la Transformation par leur piqûre.",
+      "expected_keywords": ["créature", "Labyrinthe"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q08",
+      "question": "Qui est Gally ?",
+      "reference": "Gally est un Blocard hostile à Thomas, chef des Bâtisseurs du Bloc. Il se méfie des nouveaux venus et s'oppose au plan d'évasion.",
+      "expected_keywords": ["Blocard", "Thomas"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q09",
+      "question": "Qu'est-ce que le WICKED ?",
+      "reference": "Le WICKED est l'organisation qui a conçu le Labyrinthe et mène des expériences sur des adolescents immunisés afin de trouver un remède à la Braise.",
+      "expected_keywords": ["organisation", "Labyrinthe", "remède", "Braise"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q10",
+      "question": "Qui est Chuck ?",
+      "reference": "Chuck est le plus jeune des Blocards et un ami fidèle de Thomas. Il meurt lors de l'évasion du Labyrinthe en protégeant Thomas.",
+      "expected_keywords": ["Blocard", "Thomas"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q11",
+      "question": "Qui est Alby ?",
+      "reference": "Alby est le chef du Bloc et l'un des premiers Blocards arrivés. Il fait respecter les règles et organise la vie de la communauté.",
+      "expected_keywords": ["chef", "Bloc"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q12",
+      "question": "Qu'est-ce que la Terre Brûlée ?",
+      "reference": "La Terre Brûlée est une vaste zone désertique dévastée par des éruptions solaires. On y croise des Fondus et c'est l'une des épreuves imposées par le WICKED.",
+      "expected_keywords": ["désert", "Fondu"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q13",
+      "question": "Que sont les Fondus ?",
+      "reference": "Les Fondus sont des humains infectés par la Braise à un stade avancé. Ils ont perdu la raison, deviennent violents et cannibales.",
+      "expected_keywords": ["Braise", "infecté"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q14",
+      "question": "Qui est Brenda ?",
+      "reference": "Brenda est une survivante de la Terre Brûlée qui voyage avec Jorge. Elle aide Thomas et le groupe et noue un lien fort avec lui.",
+      "expected_keywords": ["Terre Brûlée", "Jorge", "Thomas"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q15",
+      "question": "Qui est Ava Paige ?",
+      "reference": "Ava Paige est la chancelière du WICKED. Elle dirige l'organisation et justifie ses expériences par la recherche d'un remède à la Braise.",
+      "expected_keywords": ["WICKED"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q16",
+      "question": "Qu'est-ce que la Boîte ?",
+      "reference": "La Boîte est l'ascenseur qui livre chaque mois un nouveau Blocard et des provisions dans le Bloc, depuis une zone souterraine.",
+      "expected_keywords": ["Bloc"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q17",
+      "question": "Qui est Janson ?",
+      "reference": "Janson, surnommé l'Homme-Rat, est un haut responsable du WICKED. Il sert d'antagoniste et traque les immunisés pour l'organisation.",
+      "expected_keywords": ["WICKED"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q18",
+      "question": "Qu'est-ce qu'un Immunisé ?",
+      "reference": "Un Immunisé est une personne naturellement résistante à la Braise. Le WICKED les recherche car leur biologie pourrait permettre de fabriquer un remède.",
+      "expected_keywords": ["Braise", "WICKED"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q19",
+      "question": "Qui est Jorge ?",
+      "reference": "Jorge est un leader parmi les survivants de la Terre Brûlée et le protecteur de Brenda. Il accepte d'aider Thomas et son groupe.",
+      "expected_keywords": ["Terre Brûlée", "Brenda"],
+      "expected_crag_status": "PERTINENT",
+      "should_answer": true
+    },
+    {
+      "id": "q20",
+      "question": "Quel est le PIB de la France en 2023 ?",
+      "reference": null,
+      "expected_keywords": [],
+      "expected_crag_status": "HORS-SUJET",
+      "should_answer": false
+    },
+    {
+      "id": "q21",
+      "question": "Qui a gagné la Coupe du monde de football 2018 ?",
+      "reference": null,
+      "expected_keywords": [],
+      "expected_crag_status": "HORS-SUJET",
+      "should_answer": false
+    },
+    {
+      "id": "q22",
+      "question": "Comment préparer une tarte aux pommes ?",
+      "reference": null,
+      "expected_keywords": [],
+      "expected_crag_status": "HORS-SUJET",
+      "should_answer": false
+    },
+    {
+      "id": "q23",
+      "question": "Qui est Harry Potter ?",
+      "reference": null,
+      "expected_keywords": [],
+      "expected_crag_status": "HORS-SUJET",
+      "should_answer": false
+    },
+    {
+      "id": "q24",
+      "question": "Quelle est la capitale de l'Australie ?",
+      "reference": null,
+      "expected_keywords": [],
+      "expected_crag_status": "HORS-SUJET",
+      "should_answer": false
+    }
+  ]
+}

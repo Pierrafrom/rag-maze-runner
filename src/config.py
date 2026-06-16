@@ -33,10 +33,15 @@ GOOGLE_API_KEY = GOOGLE_API_KEYS[0] if GOOGLE_API_KEYS else ""
 # IMPORTANT : provider ET modèle doivent rester IDENTIQUES entre l'indexation
 # et l'interrogation — tout changement impose de reconstruire l'index.
 #
-# Fournisseur actif : "gemini" (défaut) ou "huggingface" (local, sans quota).
-#   EMBEDDING_PROVIDER=huggingface  → aucun quota, modèle téléchargé localement.
+# Fournisseur actif : "gemini" (défaut), "huggingface" ou "ollama" (local).
 #   EMBEDDING_PROVIDER=gemini       → API Gemini, rotation auto sur 429 si
 #                                     plusieurs GOOGLE_API_KEY_* définis.
+#   EMBEDDING_PROVIDER=huggingface  → sentence-transformers local (sans quota).
+#   EMBEDDING_PROVIDER=ollama       → embeddings servis par Ollama (sans quota,
+#                                     idéal pour un déploiement 100 % offline).
+# ⚠️ L'index enfant est stocké dans un dossier PROPRE à chaque provider
+#    (``chroma_children_<provider>/``) : on peut donc garder en parallèle un
+#    index Gemini (qualité cloud) et un index local, sans que l'un écrase l'autre.
 EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "gemini")
 
 # Modèle HuggingFace utilisé quand EMBEDDING_PROVIDER="huggingface".
@@ -56,8 +61,10 @@ EMBEDDING_MODEL = "models/gemini-embedding-001"
 # --- Fournisseur LLM --------------------------------------------------------
 # "gemini" (défaut) → API Google Gemini (ChatGoogleGenerativeAI).
 # "groq"            → API Groq Cloud (ChatGroq), LLM open-source ultra-rapide.
-#                     Prérequis : uv add langchain-groq
-#                     Définir GROQ_API_KEY dans le .env.
+#                     Prérequis : uv add langchain-groq + GROQ_API_KEY dans .env.
+# "ollama"          → LLM local servi par Ollama (ChatOllama), SANS quota.
+#                     Prérequis : Ollama lancé (`ollama serve`) + modèle tiré
+#                     (`ollama pull mistral`). Idéal pour l'évaluation hors quota.
 LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini")
 
 # Clé et modèle Groq (ignorés si LLM_PROVIDER="gemini").
@@ -66,7 +73,22 @@ LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini")
 GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL: str = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
 
-# Modèle Gemini (ignoré si LLM_PROVIDER="groq").
+# --- Ollama (LLM local, ignoré si LLM_PROVIDER != "ollama") -----------------
+# Modèles recommandés (bon français, exécutables sur un laptop) :
+#   mistral     — Mistral 7B, ~4.4 Go RAM (Q4), très bon en FR (défaut)
+#   gemma3:4b   — Gemma 3 4B (Google), ~3.3 Go RAM, excellent rapport qualité/poids
+#   llama3.1:8b — Llama 3.1 8B (Meta), ~4.9 Go RAM, juge robuste pour l'éval
+# Modèle d'embedding local Ollama (pour le juge RAGAS hors quota) :
+#   nomic-embed-text — ~280 Mo, multilingue correct.
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "mistral")
+OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_EMBED_MODEL: str = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+# Modèles locaux proposés dans le sélecteur Streamlit (séparés par des virgules).
+LOCAL_MODELS: list[str] = [
+    m.strip() for m in os.environ.get("LOCAL_MODELS", "mistral,gemma3:4b").split(",") if m.strip()
+]
+
+# Modèle Gemini (ignoré si LLM_PROVIDER="groq"/"ollama").
 LLM_MODEL = "gemini-2.5-flash"
 # Température de génération (le notebook prototype utilisait 0.3).
 LLM_TEMPERATURE = 0.3
@@ -156,7 +178,10 @@ CHROMA_PERSIST_DIR = "./chroma_maze_runner"
 CHROMA_COLLECTION_NAME = "langchain"
 
 # Index avancé parent-enfant.
-CHILD_CHROMA_DIR = "./chroma_children"
+# Le dossier des vecteurs « enfants » dépend du provider d'embedding (espaces
+# vectoriels incompatibles entre providers) ; les « parents » (texte brut) sont
+# indépendants du provider et donc partagés.
+CHILD_CHROMA_DIR = f"./chroma_children_{EMBEDDING_PROVIDER}"
 CHILD_COLLECTION_NAME = "maze_children"
 PARENT_DOCSTORE_DIR = "./parent_docstore"
 
@@ -169,6 +194,13 @@ NUM_QUERIES = 3  # nombre de reformulations générées
 CHILD_SEARCH_K = 10  # enfants récupérés par requête (avant fusion)
 RRF_K = 60  # constante de la Reciprocal Rank Fusion
 FUSION_TOP_N = 15  # parents conservés après fusion (entrée du reranker)
+
+# --- Recherche hybride (lexical BM25 + dense) -------------------------------
+# Le corpus est dense en noms propres (Thomas, WICKED, Griffeur, Braise…) que la
+# recherche dense sous-récupère parfois ; BM25 (lexical) compense, et son
+# classement est fusionné aux classements denses via la RRF existante.
+USE_HYBRID = True  # ajoute une liste lexicale BM25 à la fusion RRF
+BM25_K = 10  # parents lexicaux récupérés par BM25 (avant fusion)
 
 # --- Re-ranking (FlashRank, local) ------------------------------------------
 RERANK_TOP_N = 4  # documents conservés après reranking

@@ -100,8 +100,11 @@ Question
 │   ├── retrieval.py       # Multi-Query + RAG-Fusion (RRF) + Re-Ranking (FlashRank)
 │   ├── generator.py       # Chaînes LLM (génération, multi-query, CRAG, Self-RAG)
 │   └── rag.py             # RagPipeline (orchestration des 6 étapes)
-├── chroma_children/       # Base Chroma des chunks « enfants » (construite par ingest.py)
-├── parent_docstore/       # Docstore persistant des « parents »
+├── chroma_children_gemini/ # Index « enfants » Gemini (construit par ingest.py)
+│                           #   (chroma_children_ollama/ si embeddings locaux)
+├── parent_docstore/       # Docstore persistant des « parents » (partagé)
+├── Dockerfile             # Image Streamlit (LLM/index hors image)
+├── docker-compose.yml     # Stack Streamlit + Ollama (LLM local)
 ├── chroma_maze_runner/    # Base du pipeline simple (legacy, comparaison naïf vs avancé)
 ├── rag.ipynb              # Notebook prototype d'origine
 ├── CLAUDE.md              # Guide interne (assistant) — non commité
@@ -190,6 +193,9 @@ RAG naïf vs avancé), affichage des statuts CRAG/Self-RAG, des sources et des
 reformulations en option. Le pipeline est mis en cache (`@st.cache_resource`)
 par combinaison d'interrupteurs : pas de reconnexion à l'index à chaque message.
 
+Le **sélecteur de modèle** (sidebar) permet de basculer entre Gemini (API) et
+des modèles **locaux via Ollama** (sans quota) — voir les 3 modes ci-dessous.
+
 ### Utilisation programmatique
 
 ```python
@@ -198,7 +204,61 @@ from src.rag import RagPipeline
 pipeline = RagPipeline()                 # connexion lecture seule à la base
 res = pipeline.answer("Qui est Newt ?")
 print(res["answer"], res["grounded"], res["sources"])
+
+# Modèle local (sans quota) :
+local = RagPipeline(provider="ollama", model="mistral")
 ```
+
+---
+
+## 5 bis. Trois modes de lancement
+
+| Mode | LLM | Embeddings | Quota / offline |
+|---|---|---|---|
+| **A — API Gemini** (défaut) | Gemini 2.5 Flash | Gemini | quota free tier |
+| **B — LLM local** | Ollama (mistral…) | Gemini | LLM sans quota ; embeddings API |
+| **C — 100 % offline** | Ollama | Ollama (`nomic-embed-text`) | aucun quota, sans clé |
+
+### Mode A — API Gemini
+
+```bash
+uv sync && cp .env.example .env       # renseigner GOOGLE_API_KEY
+uv run streamlit run streamlit_app.py
+```
+
+### Mode B — LLM local (Ollama), embeddings Gemini
+
+```bash
+ollama serve &              # démarrer Ollama
+ollama pull mistral         # tirer un modèle
+# .env : LLM_PROVIDER=ollama  (GOOGLE_API_KEY reste requise pour les embeddings)
+uv run streamlit run streamlit_app.py
+```
+
+### Mode C — 100 % offline (LLM + embeddings locaux)
+
+L'index étant lié au provider d'embedding, on le **reconstruit une fois** en
+local (rapide : aucune pause anti-quota). L'index Gemini existant est conservé
+dans `chroma_children_gemini/` ; le local va dans `chroma_children_ollama/`.
+
+```bash
+ollama pull mistral && ollama pull nomic-embed-text
+# .env : LLM_PROVIDER=ollama  et  EMBEDDING_PROVIDER=ollama
+uv run python ingest.py --force          # construit chroma_children_ollama/
+uv run streamlit run streamlit_app.py    # plus aucune clé API requise
+```
+
+### Mode Docker (compose : Streamlit + Ollama)
+
+```bash
+docker compose up --build                       # http://localhost:8501
+docker compose --profile bootstrap up ollama-init   # (1re fois) tire les modèles
+```
+
+Les index sont montés en volume (jamais dans l'image) ; Ollama tourne dans un
+service dédié. Pour le mode 100 % offline en conteneur, mettre
+`EMBEDDING_PROVIDER=ollama` dans `.env` et lancer l'ingestion une fois :
+`docker compose run --rm rag-app uv run python ingest.py --force`.
 
 ---
 

@@ -1,0 +1,40 @@
+# Contexte de build minimal → image légère et build rapide.
+
+# Git / IDE / IA
+.git/
+.github/
+.claude/
+CLAUDE.md
+.cursor/
+
+# Environnements & caches Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets (injectés via env_file au runtime, jamais dans l'image)
+.env
+
+# Index & stores : montés en volume, inutiles dans l'image
+chroma_children_*/
+chroma_maze_runner/
+parent_docstore/
+
+# Évaluation : résultats & gros artefacts
+tests/evaluation/results/
+
+# Notebooks & vestiges
+*.ipynb
+.ipynb_checkpoints/
+Gemini_LangChain_QA_Chroma_WebLoad.*
+
+# Livrables / docs lourds
+Sujet/
+
+# Docker
+docker-compose.override.yml

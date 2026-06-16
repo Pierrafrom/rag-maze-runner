@@ -1,0 +1,6 @@
+# Runs horodatés : bruités, non versionnés.
+eval_*.json
+ragas_*.json
+# On versionne uniquement le dernier instantané de chaque évaluation.
+!eval_latest.json
+!ragas_latest.json

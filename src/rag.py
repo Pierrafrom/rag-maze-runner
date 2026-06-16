@@ -32,6 +32,7 @@ from src.config import (
     RERANK_TOP_N,
     RRF_K,
     USE_CRAG,
+    USE_HYBRID,
     USE_MULTIQUERY,
     USE_RERANK,
     USE_SELF_RAG,
@@ -74,6 +75,7 @@ class RagAnswer(TypedDict):
     grounded: bool
     crag_status: str
     sources: list[SourceInfo]
+    contexts: list[str]
     queries: list[str]
     self_rag: str
 
@@ -88,7 +90,26 @@ class RagPipeline:
         use_rerank: bool = USE_RERANK,
         use_crag: bool = USE_CRAG,
         use_self_rag: bool = USE_SELF_RAG,
+        use_hybrid: bool = USE_HYBRID,
+        provider: str | None = None,
+        model: str | None = None,
     ):
+        """Initialise le pipeline et toutes ses chaînes LLM.
+
+        Args:
+            verbose: si ``True``, les étapes sont loggées en INFO (sinon DEBUG).
+            use_multiquery: active la génération de reformulations Multi-Query.
+            use_rerank: active le re-ranking FlashRank.
+            use_crag: active le grader CRAG (anti hors-sujet).
+            use_self_rag: active l'auto-évaluation Self-RAG + correction.
+            use_hybrid: ajoute une liste lexicale BM25 à la fusion RRF.
+            provider: fournisseur LLM ("gemini", "groq", "ollama") ; défaut config.
+            model: nom du modèle à utiliser (override du modèle par défaut du
+                provider — ex. ``"mistral"`` pour Ollama).
+
+        Raises:
+            FileNotFoundError: si l'index parent-enfant n'a pas été construit.
+        """
         if not advanced_index_exists():
             raise FileNotFoundError(
                 "Index parent-enfant introuvable (chroma_children/ + "
@@ -101,17 +122,20 @@ class RagPipeline:
         self.use_rerank = use_rerank
         self.use_crag = use_crag
         self.use_self_rag = use_self_rag
+        self.use_hybrid = use_hybrid
+        self.provider = provider
+        self.model = model
 
         # Stockages (lecture seule pour la couche requête).
         self.child_vectorstore = get_child_vectorstore()
         self.docstore = get_parent_docstore()
 
-        # Chaînes LLM.
-        self.multiquery_chain = build_multiquery_chain()
-        self.generation_chain = build_generation_chain()
-        self.crag_chain = build_crag_grader_chain()
-        self.selfrag_chain = build_selfrag_chain()
-        self.correction_chain = build_correction_chain()
+        # Chaînes LLM (toutes sur le provider/modèle choisi).
+        self.multiquery_chain = build_multiquery_chain(provider, model)
+        self.generation_chain = build_generation_chain(provider, model)
+        self.crag_chain = build_crag_grader_chain(provider, model)
+        self.selfrag_chain = build_selfrag_chain(provider, model)
+        self.correction_chain = build_correction_chain(provider, model)
 
     # -- utilitaires --------------------------------------------------------
     def _log(self, message: str) -> None:
@@ -140,6 +164,7 @@ class RagPipeline:
             "grounded": False,
             "crag_status": crag_status,
             "sources": [],
+            "contexts": [],
             "queries": queries,
             "self_rag": "n/a",
         }
@@ -209,6 +234,7 @@ class RagPipeline:
             k=CHILD_SEARCH_K,
             rrf_k=RRF_K,
             top_n=FUSION_TOP_N,
+            use_hybrid=self.use_hybrid,
         )
         self._log(f"[RAG-Fusion] {len(fused)} parents fusionnés via RRF")
         candidates = [doc for doc, _ in fused]
@@ -253,6 +279,7 @@ class RagPipeline:
             "grounded": True,
             "crag_status": crag_status,
             "sources": self._sources(top_docs),
+            "contexts": [doc.page_content for doc in top_docs],
             "queries": queries,
             "self_rag": self_rag_status,
         }
