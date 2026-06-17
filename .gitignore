@@ -7,3 +7,4 @@ parent_docstore/
 __pycache__/
 *.pyc
 .venv/
+.coverage

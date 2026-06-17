@@ -23,7 +23,7 @@ def main(question: str) -> dict:
     if LLM_PROVIDER == "groq":
         if not GROQ_API_KEY:
             sys.exit("LLM_PROVIDER=groq mais GROQ_API_KEY n'est pas définie dans .env")
-    elif not GOOGLE_API_KEY:
+    elif LLM_PROVIDER != "ollama" and not GOOGLE_API_KEY:
         sys.exit("La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
 
     pipeline = RagPipeline()
