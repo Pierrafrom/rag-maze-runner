@@ -19,6 +19,44 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-06-17 — Évaluation complète en local (Ollama) + compare_hybrid + préparation démo
+
+**Quoi** : `tests/evaluation/compare_hybrid.py` *(nouveau)*, résultats dans
+`tests/evaluation/results/` (`eval_latest.json`, `compare_hybrid_latest.json`).
+
+- **compare_hybrid.py** : script CLI comparatif dense seul vs hybride BM25 sur
+  le jeu de 24 questions. Lance le pipeline deux fois, affiche un tableau ✅/⚠️
+  et sauvegarde le JSON horodaté.
+- **run_eval — résultats (llama3.2:3b, EMBEDDING_PROVIDER=ollama, 24 questions)**
+
+  | Métrique | Score |
+  |---|---|
+  | Exactitude décision réponse | **95,8 %** (23/24) |
+  | Taux de repli correct | **80,0 %** (4/5 hors-sujet) |
+  | Accord CRAG | **91,7 %** |
+  | Couverture mots-clés (moy.) | 36,8 % |
+  | Latence (CPU, sans GPU) | ~111 s/question |
+
+- **compare_hybrid — dense seul vs hybride BM25**
+
+  | Métrique | Dense | Hybride | Δ |
+  |---|---|---|---|
+  | Exactitude décision réponse | 91,7 % | **95,8 %** | **+4,2 %** ✅ |
+  | Taux de repli correct | 60,0 % | **80,0 %** | **+20,0 %** ✅ |
+  | Accord CRAG | 91,7 % | **95,8 %** | **+4,2 %** ✅ |
+  | Couverture mots-clés | **47,4 %** | 36,8 % | -10,5 % ⚠️ |
+  | Latence | 117,3 s | 121,4 s | +4,1 s ⚠️ |
+
+- **RAGAS local** : `llama3.2:3b` trop petit pour produire du JSON structuré
+  fiable → échec. Scores de référence du PoC `main` :
+  `faithfulness=0.45, answer_relevancy=0.73, precision=0.81, recall=0.50`.
+- **Infrastructure Ollama** : modèle `mistral` (7B) OOM-killed (11,7 Go RSS sur
+  15 Go host) → migration vers `llama3.2:3b` (2 Go). Index `chroma_children_ollama/`
+  construit (1260 enfants, 201 parents).
+
+**Pourquoi** : valider empiriquement l'apport du BM25 hybride. `USE_HYBRID=True`
+confirmé comme défaut justifié (repli +20 %, décision +4,2 %).
+
 ### 2026-06-16 — Recherche hybride BM25 + RRF (axe 8) + interrupteur d'ablation
 
 **Quoi** : `src/retrieval.py`, `src/config.py`, `src/rag.py`, `streamlit_app.py`,

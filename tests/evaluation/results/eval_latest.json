@@ -1,0 +1,397 @@
+{
+  "timestamp": "20260616-172214",
+  "summary": {
+    "n_cases": 24,
+    "n_in_domain": 19,
+    "n_out_of_domain": 5,
+    "answer_decision_accuracy": 0.9583333333333334,
+    "correct_fallback_rate": 0.8,
+    "crag_agreement": 0.9166666666666666,
+    "mean_keyword_coverage": 0.3684210526315789,
+    "mean_latency_s": 110.99109441250039
+  },
+  "cases": [
+    {
+      "id": "q01",
+      "question": "Qui est Thomas dans Le Labyrinthe ?",
+      "answer": "Thomas est le protagoniste de l'histoire du Labyrinthe et le garçon parfait que WICKED cherche pour construire un nouveau labyrinthe. Il est un jeune homme qui a survécu à une épidémie mortelle appelée la Braise, qui a dévasté la Terre, et qui est emprisonné dans le Labyrinthe par WICKED. Thomas est différent des autres prisonniers du Labyrinthe en raison de ses capacités uniques et de son esprit de résistance.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.5,
+      "missing_keywords": [
+        "Bloc",
+        "Coureur"
+      ],
+      "latency_s": 154.1396754890011
+    },
+    {
+      "id": "q02",
+      "question": "Qu'est-ce que la Braise ?",
+      "answer": "La Braise est un virus mortel créé par le WICKED en 2218.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.6666666666666666,
+      "missing_keywords": [
+        "Fondu"
+      ],
+      "latency_s": 149.80111298900738
+    },
+    {
+      "id": "q03",
+      "question": "Quel est le rôle de Minho dans le Labyrinthe ?",
+      "answer": "Minho est un Coureur du Bloc, et plus précisément Mâton des Cuistots, responsable de la sécurité des portes du Labyrinthe.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.6666666666666666,
+      "missing_keywords": [
+        "Maton"
+      ],
+      "latency_s": 138.16157729100087
+    },
+    {
+      "id": "q04",
+      "question": "Qu'est-ce que le Labyrinthe ?",
+      "answer": "Le Labyrinthe est un bâtiment situé sous les sous-sols du quartier général du WICKED, composé de deux labyrinthes où les enfants des Blocs sont envoyés pour passer une nuit avant de pouvoir quitter le complexe.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.5,
+      "missing_keywords": [
+        "murs",
+        "Griffeur"
+      ],
+      "latency_s": 152.4329527230002
+    },
+    {
+      "id": "q05",
+      "question": "Qui est Newt ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Bloc",
+        "Alby",
+        "Thomas"
+      ],
+      "latency_s": 112.66855147799652
+    },
+    {
+      "id": "q06",
+      "question": "Qui est Teresa ?",
+      "answer": "Teresa est une ancienne Blocarde et une créatrice du Labyrinthe. Elle est également la double de Thomas dans le Groupe B.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.6666666666666666,
+      "missing_keywords": [
+        "WICKED"
+      ],
+      "latency_s": 122.5488654810033
+    },
+    {
+      "id": "q07",
+      "question": "Que sont les Griffeurs ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "créature",
+        "Labyrinthe"
+      ],
+      "latency_s": 114.28946246301348
+    },
+    {
+      "id": "q08",
+      "question": "Qui est Gally ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Blocard",
+        "Thomas"
+      ],
+      "latency_s": 112.83522673900006
+    },
+    {
+      "id": "q09",
+      "question": "Qu'est-ce que le WICKED ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "organisation",
+        "Labyrinthe",
+        "remède",
+        "Braise"
+      ],
+      "latency_s": 95.68380094699387
+    },
+    {
+      "id": "q10",
+      "question": "Qui est Chuck ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Blocard",
+        "Thomas"
+      ],
+      "latency_s": 125.41948160600441
+    },
+    {
+      "id": "q11",
+      "question": "Qui est Alby ?",
+      "answer": "Alby est un Blocard et l'un des amis proches de Thomas, Newt et Minho. Il est également le leader du groupe de Blocards qui décident d'échapper au Labyrinthe. Alby est connu pour son patience envers Thomas et son respect pour lui comme leader.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.5,
+      "missing_keywords": [
+        "chef"
+      ],
+      "latency_s": 128.1473160250025
+    },
+    {
+      "id": "q12",
+      "question": "Qu'est-ce que la Terre Brûlée ?",
+      "answer": "La Terre Brûlée est un désert de poussière ravagé par les éruptions solaires, situé entre les tropiques du Cancer et du Capricorne, en Amérique centrale et en Amérique du Sud, ainsi qu'en Asie du Sud-Est et en Afrique.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.5,
+      "missing_keywords": [
+        "Fondu"
+      ],
+      "latency_s": 137.97257023600105
+    },
+    {
+      "id": "q13",
+      "question": "Que sont les Fondus ?",
+      "answer": "Les Fondus sont des créatures cannibales et mutagènes qui infestent le Labyrinthe. Elles sont originales des terres brûlées et ont été infectées par la Braise, ce qui les transforme en êtres fous et ravageurs.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 140.54808203299763
+    },
+    {
+      "id": "q14",
+      "question": "Qui est Brenda ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "AMBIGU",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": false,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Terre Brûlée",
+        "Jorge",
+        "Thomas"
+      ],
+      "latency_s": 108.66703374499048
+    },
+    {
+      "id": "q15",
+      "question": "Qui est Ava Paige ?",
+      "answer": "Je comprends mieux maintenant que je devais répondre à cette question précise. \n\nAva Paige est la chancelière du Bras Droit (WICKED) et une des principales personnages du livre, connue pour son empathie envers Thomas et sa volonté de trouver un remède à la Braise.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 115.6704948849947
+    },
+    {
+      "id": "q16",
+      "question": "Qu'est-ce que la Boîte ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Bloc"
+      ],
+      "latency_s": 139.71607006900012
+    },
+    {
+      "id": "q17",
+      "question": "Qui est Janson ?",
+      "answer": "Janson est l'homme-rat qui travaille pour WICKED et est chargé de mener à bien les expériences sur les Blocards, notamment la dernière étape consistant à disséquer le cerveau d'un candidat. Il est décrit comme ayant une personnalité agressive et violente, capable de se transformer en un être à sang froid lorsqu'il est furieux ou menacé.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 118.93791674698878
+    },
+    {
+      "id": "q18",
+      "question": "Qu'est-ce qu'un Immunisé ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Braise",
+        "WICKED"
+      ],
+      "latency_s": 133.64921753600356
+    },
+    {
+      "id": "q19",
+      "question": "Qui est Jorge ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "PERTINENT",
+      "expected_crag_status": "PERTINENT",
+      "crag_match": true,
+      "should_answer": true,
+      "answer_match": true,
+      "keyword_coverage": 0.0,
+      "missing_keywords": [
+        "Terre Brûlée",
+        "Brenda"
+      ],
+      "latency_s": 99.35863911100023
+    },
+    {
+      "id": "q20",
+      "question": "Quel est le PIB de la France en 2023 ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": false,
+      "crag_status": "HORS-SUJET",
+      "expected_crag_status": "HORS-SUJET",
+      "crag_match": true,
+      "should_answer": false,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 22.97018823500548
+    },
+    {
+      "id": "q21",
+      "question": "Qui a gagné la Coupe du monde de football 2018 ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": false,
+      "crag_status": "HORS-SUJET",
+      "expected_crag_status": "HORS-SUJET",
+      "crag_match": true,
+      "should_answer": false,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 31.63414446999377
+    },
+    {
+      "id": "q22",
+      "question": "Comment préparer une tarte aux pommes ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": true,
+      "crag_status": "AMBIGU",
+      "expected_crag_status": "HORS-SUJET",
+      "crag_match": false,
+      "should_answer": false,
+      "answer_match": false,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 157.9563634070073
+    },
+    {
+      "id": "q23",
+      "question": "Qui est Harry Potter ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": false,
+      "crag_status": "HORS-SUJET",
+      "expected_crag_status": "HORS-SUJET",
+      "crag_match": true,
+      "should_answer": false,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 25.13330691200099
+    },
+    {
+      "id": "q24",
+      "question": "Quelle est la capitale de l'Australie ?",
+      "answer": "Je ne dispose pas d'informations suffisantes dans le wiki pour répondre à cette question.",
+      "grounded": false,
+      "crag_status": "HORS-SUJET",
+      "expected_crag_status": "HORS-SUJET",
+      "crag_match": true,
+      "should_answer": false,
+      "answer_match": true,
+      "keyword_coverage": 1.0,
+      "missing_keywords": [],
+      "latency_s": 25.44421528300154
+    }
+  ]
+}

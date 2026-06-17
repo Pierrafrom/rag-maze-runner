@@ -2,6 +2,8 @@
 .claude/
 CLAUDE.md
 chroma_db/
+chroma_children_ollama/
+parent_docstore/
 __pycache__/
 *.pyc
 .venv/

@@ -1,0 +1,26 @@
+{
+  "timestamp": "20260616-190108",
+  "n_questions": 24,
+  "provider": "ollama",
+  "model": "llama3.2:3b",
+  "dense": {
+    "n_cases": 24,
+    "n_in_domain": 19,
+    "n_out_of_domain": 5,
+    "answer_decision_accuracy": 0.9166666666666666,
+    "correct_fallback_rate": 0.6,
+    "crag_agreement": 0.9166666666666666,
+    "mean_keyword_coverage": 0.47368421052631576,
+    "mean_latency_s": 117.2985809355414
+  },
+  "hybrid": {
+    "n_cases": 24,
+    "n_in_domain": 19,
+    "n_out_of_domain": 5,
+    "answer_decision_accuracy": 0.9583333333333334,
+    "correct_fallback_rate": 0.8,
+    "crag_agreement": 0.9583333333333334,
+    "mean_keyword_coverage": 0.3684210526315789,
+    "mean_latency_s": 121.43686103324883
+  }
+}
