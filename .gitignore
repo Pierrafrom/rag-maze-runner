@@ -2,9 +2,14 @@
 .claude/
 CLAUDE.md
 chroma_db/
+chroma_children_gemini/
 chroma_children_ollama/
+chroma_maze_runner/
 parent_docstore/
 __pycache__/
 *.pyc
 .venv/
 .coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
