@@ -1,5 +1,12 @@
 # RAG Maze Runner — LO17 / AI31 (UTC, Printemps 2026)
 
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?logo=langchain&logoColor=white)](pyproject.toml)
+[![Chroma](https://img.shields.io/badge/vector%20store-Chroma-informational)](pyproject.toml)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](streamlit_app.py)
+[![Docker](https://img.shields.io/badge/Docker-Ollama%20%2B%20Streamlit-2496ED?logo=docker&logoColor=fff)](docker-compose.yml)
+[![Checks](https://img.shields.io/badge/ruff%20%7C%20mypy%20--strict%20%7C%20pytest-passing-brightgreen)](pyproject.toml)
+
 Système de **RAG (Retrieval Augmented Generation)** qui répond **en français** à
 des questions sur l'univers du **Labyrinthe (Maze Runner)**, à partir du contenu
 du **wiki Fandom FR**, en s'appuyant sur **Google Gemini**, **LangChain** et la
@@ -16,9 +23,10 @@ D'après `Sujet/Consignes pour le Projet.pdf` :
 - [x] **RAG sur un corpus en français** (choix motivé des données).
 - [x] **Code reproductible** basé sur le notebook de référence.
 - [x] **Gestion des hallucinations**.
-- [ ] **Évaluation du RAG** (à faire).
+- [x] **Évaluation du RAG** — jeu de questions de référence, RAGAS et
+  comparaison hybride vs. naïf (`tests/evaluation/`).
 - [x] **Application Streamlit** (`streamlit_app.py`).
-- [ ] **Bonus** : déploiement de l'application.
+- [x] **Bonus** : déploiement conteneurisé (Docker Compose — Streamlit + Ollama).
 
 **Choix du corpus.** Le wiki Fandom FR du Labyrinthe est riche, structuré
 (personnages, lieux, créatures, œuvres), entièrement en français, et stable —
@@ -139,8 +147,8 @@ copy .env.example .env           # Windows  (cp .env.example .env sur Unix)
 
 ### Construire la base (une seule fois)
 
-La base `chroma_maze_runner/` est **déjà fournie** (323 vecteurs). Pour la
-reconstruire de zéro (supprimer d'abord le dossier) :
+Les index vectoriels ne sont pas versionnés (générés, pas des sources) —
+à construire avant la première utilisation :
 
 ```bash
 uv run python ingest.py
@@ -323,11 +331,13 @@ Toutes les décisions et modifications sont consignées dans **`suivi.md`**
 ## 10. Étapes suivantes (TODO)
 
 - [x] **Application Streamlit** (`streamlit_app.py`) au-dessus de `RagPipeline`.
-- [ ] **Évaluation du RAG** : jeu de questions/réponses de référence + métriques
-  (pertinence des passages, fidélité des réponses, taux de repli correct),
-  en comparant les configurations via les interrupteurs `USE_*`.
-- [ ] Décider de **versionner ou non** les index (`chroma_children/`, etc.).
-- [ ] (Bonus) **Déploiement** de l'application.
+- [x] **Évaluation du RAG** : jeu de questions/réponses de référence + métriques
+  RAGAS, comparaison hybride vs. naïf via les interrupteurs `USE_*`
+  (`tests/evaluation/`).
+- [x] **Versionnement des index** : décidé — non versionnés (générés par
+  `uv run python ingest.py`, ignorés par git).
+- [x] (Bonus) **Déploiement** : Docker Compose (Streamlit + Ollama, GPU
+  optionnel).
 
 ---
 
