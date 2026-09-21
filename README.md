@@ -18,6 +18,15 @@ it goes well beyond a basic RAG demo: hybrid retrieval, a re-ranking step,
 two layers of hallucination mitigation (CRAG and Self-RAG), a full
 evaluation suite (RAGAS), a Streamlit chat UI, and a Dockerized deployment.
 
+## Screenshot
+
+![Streamlit chat UI answering a question about the Maze Runner universe, with the pipeline toggles, model selector, CRAG and Self-RAG status, and cited sources](docs/screenshots/streamlit-demo.png)
+
+The sidebar toggles each pipeline step live (Multi-Query, hybrid search,
+FlashRank re-ranking, CRAG, Self-RAG) and switches between Gemini and
+local Ollama models. Every answer shows its CRAG and Self-RAG verdicts
+plus the sources it was grounded on.
+
 ## What it does
 
 - **Retrieval**: a Parent Document Retriever splits the wiki into small
