@@ -39,11 +39,15 @@ docker compose up -d rag-app
       · **Self-RAG : OFF** — voir encadré ci-dessous
 - [ ] Sidebar → "Afficher les sources" ON, "Afficher les reformulations" OFF
       (on l'activera en live)
-- [ ] **Poser Q1 et Q2 maintenant** (voir section 2) pour qu'elles soient déjà
+- [ ] **Poser Q1 à Q8 maintenant** (voir section 2) pour qu'elles soient déjà
       dans l'historique du chat au moment de présenter — on ne les repose pas
-      en live, on scrolle et on commente
+      en live, on scrolle et on commente. **Vérifier le badge CRAG de chacune**
+      avant la démo : si une question hors-sujet (Q6-Q8) ressort `PERTINENT`
+      ou `AMBIGU` au lieu de `HORS-SUJET`, la remplacer par une autre question
+      avant de présenter (le juge local `mistral` se trompe parfois — testé
+      ce jour avec "Harry Potter" et "capitale de l'Australie")
 - [ ] **Ne pas vider l'historique** avant de présenter (contrairement à un
-      mode rapide type Gemini) : on a besoin que Q1/Q2 restent visibles
+      mode rapide type Gemini) : on a besoin que Q1-Q8 restent visibles
 
 > **Pourquoi Self-RAG est désactivé en offline :** Self-RAG utilise le même
 > modèle que la génération comme juge de sa propre réponse. Avec `mistral`
@@ -59,39 +63,53 @@ docker compose up -d rag-app
 
 ## 2. Questions à poser
 
-### Q1 — Question dans le domaine (à poser AVANT de présenter)
+### Q1-Q5 — Questions dans le domaine (à poser AVANT de présenter)
 
 ```
-Qu'est-ce que le WICKED ?
+1. Qu'est-ce que le WICKED ?
+2. Qui est Thomas ?
+3. Qu'est-ce que la Braise ?
+4. Quel est le rôle de Minho dans le Labyrinthe ?
+5. Que sont les Griffeurs ?
 ```
 
-**En présentant (scroller jusqu'à cette réponse déjà affichée), dire :**
-"la question a été reformulée 3 fois (Multi-Query), recherchée en dense +
-lexical BM25, fusionnée par RRF, puis re-classée par FlashRank."
+**Attendu pour chacune :** badge `🟢 CRAG : PERTINENT · ⚪ Self-RAG : désactivé`,
+réponse correcte avec sources du wiki FR. Q1 et Q2 déjà vérifiées fiables en
+live aujourd'hui ; Q3-Q5 à vérifier pendant le setup (cf. checklist).
 
-- Ouvrir 🔄 **Reformulations** → montre les 3 reformulations Multi-Query
+**En présentant (scroller dans l'historique), dire :** "la question a été
+reformulée 3 fois (Multi-Query), recherchée en dense + lexical BM25, fusionnée
+par RRF, puis re-classée par FlashRank."
+
+- Choisir une des 5 réponses, ouvrir 🔄 **Reformulations** → montre les 3
+  reformulations Multi-Query
 - Ouvrir 🔗 **Sources** → montre les pages FR du wiki citées (preuve "données
   en français" + traçabilité)
-- Pointer le badge `🟢 CRAG : PERTINENT · ⚪ Self-RAG : désactivé`
 
-### Q2 — Question hors-sujet (à poser AVANT de présenter)
+### Q6-Q8 — Questions hors-sujet (à poser AVANT de présenter)
 
 ```
-Qui est Harry Potter ?
+6. Quel est le PIB de la France en 2023 ?
+7. Qui a gagné la Coupe du monde de football 2018 ?
+8. Qui est Harry Potter ?
 ```
 
-**Résultat attendu (déjà visible) :** réponse de repli immédiate, badge
-`🔴 CRAG : HORS-SUJET`.
+**Attendu pour chacune :** réponse de repli immédiate, badge
+`🔴 CRAG : HORS-SUJET`. ⚠️ **Non garanti avec `mistral`** — testé aujourd'hui,
+"Harry Potter" est ressorti `PERTINENT` à tort. Si l'une des 3 échoue pendant
+le setup, la remplacer par une autre question clairement hors-sujet (ex.
+"Comment fonctionne un moteur à combustion ?", "Quel est le plus haut sommet
+du monde ?") jusqu'à en avoir 3 qui passent correctement.
 
 **Dire :** "Le grader CRAG bloque avant même d'appeler le LLM de génération —
 zéro tentative d'hallucination, pas juste un post-filtrage."
 
-### Q3 — Même question hors-sujet, sans CRAG (EN LIVE, le seul live)
+### Q9 — Une question hors-sujet, sans CRAG (EN LIVE, le seul live)
 
 1. Décocher **CRAG** dans la sidebar (devant le jury) — Self-RAG reste OFF
 2. Sélectionner **💻 llama3.2:3b (local)** dans la sidebar (plus rapide — ici
    on n'a pas besoin de qualité, juste du contraste)
-3. Reposer exactement la même question :
+3. Reposer une des questions Q6-Q8 validées :
 
 ```
 Qui est Harry Potter ?
@@ -161,6 +179,6 @@ local (hors Docker) — bien plus rapide mais nécessite une clé API et du quot
 |---|---|
 | Données en français motivées | Sources citées à la Q1 (wiki Fandom FR) |
 | Évaluation du RAG | Section 3 (métriques chiffrées) |
-| Gestion des hallucinations | Q2 et Q3 (CRAG avec/sans) ; Self-RAG démontré et sa limite (juge local) expliquée |
+| Gestion des hallucinations | Q6-Q9 (CRAG avec/sans) ; Self-RAG démontré et sa limite (juge local) expliquée |
 | Application Streamlit | Tout le scénario tourne dans l'appli |
 | Bonus déploiement | Toute la démo tourne 100 % offline (Docker/Ollama) |

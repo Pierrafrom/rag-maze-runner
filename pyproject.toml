@@ -29,6 +29,8 @@ dev = [
     "pytest-mock>=3.14",
     "types-requests>=2.31",
     "types-beautifulsoup4>=4.12",
+    "mdformat>=1.0.0",
+    "mdformat-gfm>=1.0.0",
 ]
 # Évaluation RAGAS (optionnelle, lourde) : uv sync --group eval
 eval = [

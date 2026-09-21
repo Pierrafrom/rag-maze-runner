@@ -19,6 +19,31 @@ Ce fichier est **suivi par git** et fait partie du livrable.
 
 ## Journal
 
+### 2026-07-15 — Accélération GPU pour Ollama (natif + Docker)
+
+**Quoi** : `docker-compose.yml` (service `ollama`) — bloc `deploy.resources.reservations.devices`
+(GPU NVIDIA) décommenté, ajout de `environment: OLLAMA_NUM_PARALLEL=2`,
+`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_MAX_LOADED_MODELS=1`.
+Installation système (hors repo) de `nvidia-container-toolkit` sur la machine hôte
++ configuration du runtime Docker (`nvidia-ctk runtime configure`).
+
+**Pourquoi** : Ollama tournait 100 % CPU (`size_vram=0` dans `/api/ps`) malgré un GPU
+disponible (RTX 4070 Laptop, 8 Go) — le bloc de réservation GPU du compose était présent
+mais commenté depuis la création du fichier, et `nvidia-container-toolkit` n'était pas
+installé sur l'hôte (WSL2). Latence mesurée avant/après sur un appel `generate` :
+~16 s (CPU) → ~1,3 s (GPU, warm). Les variables `FLASH_ATTENTION`/`KV_CACHE_TYPE=q8_0`
+quantifient le cache K/V (≈ moitié moins de VRAM pour le contexte, perte de qualité
+non perceptible) — marge nécessaire sur 8 Go pour tourner avec `OLLAMA_NUM_PARALLEL=2`.
+`OLLAMA_MAX_LOADED_MODELS=1` évite l'éviction imprévisible d'un second modèle sur une
+VRAM aussi contrainte.
+
+En parallèle, Ollama est aussi installé **nativement** sur la machine (service systemd,
+mêmes variables via `/etc/systemd/system/ollama.service.d/override.conf`) pour l'usage
+courant hors Docker. Les deux se disputent le port hôte 11434 — pas de solution
+« par projet » (casserait la portabilité du repo pour un tiers qui le clonerait) :
+bascule via deux fonctions fish génériques (`ollama-native` / `ollama-docker`,
+hors repo, dans `~/.config/fish/functions/`) qui arrêtent l'un avant de démarrer l'autre.
+
 ### 2026-06-17 — Évaluation complète en local (Ollama) + compare_hybrid + préparation démo
 
 **Quoi** : `tests/evaluation/compare_hybrid.py` *(nouveau)*, résultats dans

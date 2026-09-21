@@ -19,7 +19,12 @@ services:
     image: ollama/ollama:latest
     container_name: maze-ollama
     ports:
-      - "11434:11434"
+      # Ollama global (natif, systemd) reste le service par défaut sur le 11434 de
+      # l'hôte — port hôte alternatif ici pour éviter le conflit. Cette exposition
+      # hôte n'est qu'un confort de debug (curl/`ollama` CLI depuis l'hôte) : les
+      # autres services du compose parlent à ce conteneur via le réseau interne
+      # (`http://ollama:11434`), jamais via ce port hôte.
+      - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -28,14 +33,19 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    # GPU NVIDIA (optionnel) : décommenter si nvidia-container-toolkit est installé.
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    environment:
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_MAX_LOADED_MODELS=1
+    # GPU NVIDIA — nvidia-container-toolkit installé sur la machine hôte (2026-07-15).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   # Service one-shot : tire les modèles locaux. Profil "bootstrap" → ne tourne
   # pas au `up` normal. Lancer : docker compose --profile bootstrap up ollama-init
